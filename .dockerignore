@@ -1,0 +1,14 @@
+.git
+.github
+docs
+**/*.md
+**/.DS_Store
+services/ocr/tests
+services/ocr/target
+
+# Only the release binary is needed from the build directory. The parent
+# directory must be excluded with a wildcard for the re-includes to work.
+target/*
+!target/release
+target/release/*
+!target/release/ocr-service

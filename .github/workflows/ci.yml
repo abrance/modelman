@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: 构建与测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 缓存 cargo 与 target
+        # MNN 走 ocr-rs 的预编译归档，不再从源码构建，因此缓存命中后
+        # 一次完整构建通常在数分钟内完成。
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          workspaces: ". -> target"
+
+      - name: 格式检查
+        run: cargo fmt --all -- --check
+
+      - name: 静态检查
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: 编译 release
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+        run: cargo build --release
+
+      - name: 单元测试、契约测试与 HTTP 测试
+        # 契约测试会真实加载模型并对固定样本做推理，这是模型变更的门禁。
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+          CONTRACT_MODEL: v6small
+        run: cargo test --release -- --nocapture --test-threads=1 | tail -80
+
+      - name: 构建镜像
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+        run: make image TAG=ci
+
+      - name: 容器冒烟测试
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 18080:8080 --memory=1500M modelman-ocr:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/readyz >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18080/healthz
+          curl -fsS http://127.0.0.1:18080/version
+          curl -fsS -F image=@services/ocr/tests/fixtures/case_05.png \
+            http://127.0.0.1:18080/ocr | tee /tmp/ocr.json
+          python3 - <<'PY'
+          import json, sys
+          payload = json.load(open("/tmp/ocr.json"))
+          assert payload["success"] is True, payload
+          assert payload["results"], payload
+          assert payload["results"][0]["text"], payload
+          print("smoke ok:", payload["results"][0]["text"])
+          PY
+          docker inspect -f '{{.State.Health.Status}}' smoke
+          docker rm -f smoke
+
+      - name: 显示镜像体积
+        run: docker images modelman-ocr:ci --format '{{.Repository}}:{{.Tag}} {{.Size}}'

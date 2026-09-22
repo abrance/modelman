@@ -1,0 +1,9 @@
+{
+  "cases": 20,
+  "inference_ms_p50": 6.490193,
+  "inference_ms_p95": 16.900472,
+  "model": "v6small",
+  "note": "Regenerate with: cargo run --release --bin gen-fixtures",
+  "peak_rss_kb": 84652,
+  "total_lines": 20
+}

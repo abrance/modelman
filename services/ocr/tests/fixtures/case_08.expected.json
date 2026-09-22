@@ -1,0 +1,14 @@
+{
+  "conf_threshold": 0.30000001192092896,
+  "inference_ms": 7.213024,
+  "lines": [
+    {
+      "confidence": 0.9994664192199707,
+      "text": "33"
+    }
+  ],
+  "min_similarity": 0.95,
+  "model": "v6small",
+  "raw_line_count": 1,
+  "source_image": "case_08.png"
+}

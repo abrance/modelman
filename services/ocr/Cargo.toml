@@ -1,0 +1,52 @@
+[package]
+name = "ocr-service"
+description = "PP-OCR text recognition HTTP service (MNN, CPU-first)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+build = "build.rs"
+default-run = "ocr-service"
+
+[lib]
+name = "ocr_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ocr-service"
+path = "src/main.rs"
+
+[[bin]]
+name = "gen-fixtures"
+path = "src/bin/gen-fixtures.rs"
+
+[features]
+# Optional Vulkan backend. Off by default: measured CPU inference is several
+# times faster than the vulkan path for these tiers, and the feature drags in a
+# libvulkan runtime dependency plus a fragile static-initializer link step.
+vulkan = ["ocr-rs/vulkan"]
+
+[dependencies]
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = "0.25"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# MNN is linked from the upstream prebuilt archive (zibo-chen/MNN-Prebuilds)
+# rather than compiled from source: a source build pulls a full MNN checkout
+# over the network and adds ~15 minutes to every image build, while the
+# prebuilt archive is the same MNN release and needs a single download.
+#
+# No backend feature is enabled on purpose. `build-mnn-from-source` and
+# `vulkan` both force the source path, and measured CPU inference (5-10 ms per
+# image for v6small) beats the vulkan path (30-75 ms) on the target hosts.
+# Set MNN_SOURCE_DIR to build from a local MNN checkout instead.
+ocr-rs = { version = "2", default-features = false }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
