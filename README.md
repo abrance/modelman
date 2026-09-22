@@ -1,42 +1,41 @@
-# modelman - self-hosted small model services
+# modelman - 自托管小模型服务
 
-A small, boring delivery pipeline for small self-hosted models: one image per
-service, built by CI, pulled by the deployment host, health-gated on deploy.
+给小模型准备的一条尽量无脑的交付链路：一个服务一个镜像，CI 构建并发布，
+部署主机拉取，上线前有健康门禁。
 
-The first and currently only service is **OCR** (PP-OCR v5/v6 via MNN), which
-replaces the hand-mounted binary deployment that lived in the `kuba` repository
-with a versioned image.
+当前只有一个服务：**OCR**（PP-OCR v5/v6，经 MNN 推理）。它取代了原先把编译好的
+二进制挂载进通用 GPU 镜像的手工部署方式。
 
-## Layout
+## 目录结构
 
 ```
 modelman/
 ├── Cargo.toml                  # cargo workspace
-├── Makefile                    # build/test/image entry points
-├── registry/                   # model registry: which model each service runs
+├── Makefile                    # 构建 / 测试 / 镜像入口
+├── registry/                   # 模型注册表：每个服务实际跑哪个模型
 ├── services/
-│   └── ocr/                    # PP-OCR detection + recognition service
-│       ├── models/             # MNN model files and dictionaries
-│       ├── src/                # service code
-│       ├── tests/fixtures/     # contract-test corpus and baselines
+│   └── ocr/                    # PP-OCR 检测 + 识别服务
+│       ├── models/             # MNN 模型文件与字符字典
+│       ├── src/                # 服务代码
+│       ├── tests/fixtures/     # 契约测试样本与基线
 │       └── Dockerfile
 └── docs/
-    ├── architecture.md         # service conventions and directory roles
-    ├── adding-a-service.md     # checklist for the next service
-    ├── ocr-model-selection.md  # measured tier comparison
-    └── deployment.md           # image, registry and host-side deployment
+    ├── architecture.md         # 服务约定与目录职责
+    ├── adding-a-service.md     # 新增服务的检查单
+    ├── ocr-model-selection.md  # 档位实测对比
+    └── deployment.md           # 镜像、镜像源与部署链路
 ```
 
-## Quick start
+## 快速开始
 
 ```bash
 make build     # cargo build --release
-make test      # unit + contract + http tests (runs real inference)
-make run       # serve on 0.0.0.0:8080 with models/
-make image     # docker image modelman-ocr:local
+make test      # 单元 + 契约 + HTTP 测试（会真实加载模型推理）
+make run       # 在 0.0.0.0:8080 启动服务
+make image     # 构建 docker 镜像 modelman-ocr:local
 ```
 
-Smoke test the running service:
+对运行中的服务做一次冒烟：
 
 ```bash
 curl -s http://127.0.0.1:8080/healthz
@@ -44,27 +43,29 @@ curl -s -F image=@services/ocr/tests/fixtures/case_05.png \
      http://127.0.0.1:8080/ocr
 ```
 
-## HTTP surface
+## 接口
 
-| Method | Path | Auth | Purpose |
+| 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
-| GET | `/health`, `/healthz` | no | liveness with loaded models and uptime |
-| GET | `/livez` | no | process is up |
-| GET | `/readyz` | no | default tier resident, safe for traffic |
-| GET | `/version` | no | version, commit, build time, effective config |
-| GET | `/models` | no | shipped tiers, loaded state, load errors |
-| GET | `/metrics` | yes | Prometheus text exposition |
-| POST | `/ocr` | yes | recognise one image |
-| POST | `/ocr/batch` | yes | recognise several images in one request |
+| GET | `/health`, `/healthz` | 否 | 存活状态，含已加载模型与运行时长 |
+| GET | `/livez` | 否 | 进程存活 |
+| GET | `/readyz` | 否 | 默认档位已常驻，可以接流量 |
+| GET | `/version` | 否 | 版本、提交、构建时间、生效配置 |
+| GET | `/models` | 否 | 可用档位、加载状态、加载失败原因 |
+| GET | `/metrics` | 是 | Prometheus 文本格式 |
+| POST | `/ocr` | 是 | 识别单张图片 |
+| POST | `/ocr/batch` | 是 | 一次请求识别多张图片 |
 
-`/ocr` accepts `multipart/form-data` with an `image` field plus optional
-`model` and `backend` query parameters, and returns the response shape the
-predecessor service already used:
+`/ocr` 接受 `multipart/form-data`，图片放在 `image` 字段，可选 `model` 与
+`backend` 查询参数，返回结构与前置实现保持一致：
 
 ```json
 {
   "success": true,
-  "results": [{ "text": "...", "confidence": 0.93, "bbox": { "left": 0, "top": 0, "width": 150, "height": 33 } }],
+  "results": [
+    { "text": "烈战☆大表弟", "confidence": 0.934,
+      "bbox": { "left": 0, "top": 0, "width": 150, "height": 33 } }
+  ],
   "time_ms": 28.4,
   "model": "v6small",
   "backend": "cpu",
@@ -72,24 +73,26 @@ predecessor service already used:
 }
 ```
 
-Auth is off unless `AUTH_TOKEN` is set; when set, `/ocr`, `/ocr/batch` and
-`/metrics` require `X-Auth-Token: <token>` or `Authorization: Bearer <token>`.
-Health endpoints deliberately stay open so a container can be probed before
-credentials exist.
+默认不启用鉴权。设置 `AUTH_TOKEN` 后，`/ocr`、`/ocr/batch`、`/metrics` 需要带
+`X-Auth-Token: <token>` 或 `Authorization: Bearer <token>`；
+健康检查类端点刻意保持开放，以便容器在拿到凭据之前就能被探活。
 
-## Model tiers
+## 模型档位
 
-| Tier | Notes |
+| 档位 | 说明 |
 |---|---|
-| `v6small` | **default.** Best accuracy per millisecond on the shipped corpus |
-| `v6tiny` | ~5x faster and ~60% less memory, but misses roughly 40% of the lines `v6small` reads |
-| `v5` | previous generation, kept for output compatibility |
+| `v6small` | **默认。** 在自带样本上精度与耗时的比值最优 |
+| `v6tiny` | 快约 5 倍、内存少约 60%，但会漏掉 `v6small` 能识别的约 40% 的行 |
+| `v5` | 上一代，保留用于输出兼容 |
 
-Measurements and the reason PP-OCRv6 medium is not shipped are in
-`docs/ocr-model-selection.md`.
+实测数据与"为什么不交付 PP-OCRv6 medium"见 `docs/ocr-model-selection.md`。
 
-## Delivery
+## 许可
 
-`modelman` never deploys itself. A tag push builds and publishes an image to
-GHCR; the `cops` repository pins that image tag and deploys it. See
-`docs/deployment.md`.
+代码使用 MIT，见 `LICENSE`。`services/*/models/` 下的模型文件来自 PaddlePaddle /
+PaddleOCR，沿用上游 Apache-2.0，出处见 `services/ocr/models/README.md`。
+
+## 交付
+
+本仓库不负责部署。打 tag 后由 CI 构建并推送到 GHCR，再由 `cops` 仓库固定镜像 tag
+完成部署。流程见 `docs/deployment.md`。

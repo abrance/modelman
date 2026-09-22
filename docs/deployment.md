@@ -52,17 +52,22 @@ apps/model-ocr/
 
 ## 暴露方式
 
-`compose.yaml` 默认只绑定 `127.0.0.1`，即只有云主机本机进程和同机的反向代理能访问。
+`compose.yaml` 只绑定 `127.0.0.1`，即只有云主机本机进程和同机的反向代理能访问。
 这是刻意的默认值：OCR 服务本身没有账号体系，直接绑 `0.0.0.0` 等于把接口公开。
 
-需要对外提供服务时，按以下顺序处理：
+公网入口（TLS、域名反代）由宿主机上的 dockpanel/traefik 管理，不在本仓库也不在
+`cops` 仓库的范围，`cops` 只保证服务在回环地址上监听。这与 `ptdoc-qdrant` 的处理方式一致。
 
-1. 设置 `AUTH_TOKEN`，把 token 放进云主机 `/opt/cops/secrets/model-ocr.env`，
-   并在 `app.conf` 的 `SECRET_ENV` 中声明，同时在 cops 的 `deploy.yml`
-   里把对应的 GitHub Actions secret 映射进去。
-2. 把 compose 的端口绑定从 `127.0.0.1:9101` 改成 `9101`，或改为由
-   同机 traefik 反向代理到该端口，由 traefik 提供 HTTPS。
-3. 确认云安全组只放行必要端口。
+**只要那个入口对公网开放，就必须先给服务加 token。** 未加 token 的 OCR 接口是
+纯 CPU 消耗型接口，公开可达意味着任何人都能用你的算力。三步：
+
+1. 在 `cops` 的 `deploy.yml` 密钥分发映射里加一行（GitHub Actions 不支持按变量名动态读 secret）。
+2. 在 `apps/model-ocr/app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV` 中声明 `AUTH_TOKEN`。
+3. 把 token 写入云主机 `/opt/cops/secrets/model-ocr.env`（权限 600）。
+
+设置后 `/ocr`、`/ocr/batch`、`/metrics` 需要带 `X-Auth-Token` 或
+`Authorization: Bearer`，`/healthz`、`/readyz`、`/version`、`/models` 仍然免鉴权，
+以便容器在拿到凭据之前就能通过健康检查。
 
 ## 资源上限
 
