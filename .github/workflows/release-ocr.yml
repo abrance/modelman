@@ -1,0 +1,143 @@
+name: Release OCR service
+
+# 发布由 tag 触发，tag 约定为 <service>/v<semver>，例如 ocr/v0.1.0。
+# 流程与仓库既有发布链路一致：CI 只负责产出镜像，部署由 cops 改 tag 完成。
+on:
+  push:
+    tags:
+      - "ocr/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 ocr/v0.1.0），用于重跑发布"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-ocr-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-ocr
+
+jobs:
+  release:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本与提交
+        id: meta
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${ref#ocr/}"
+          if ! printf '%s' "${version}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag 必须形如 ocr/v1.2.3，实际为 ${ref}" >&2
+            exit 1
+          fi
+          short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
+          # 镜像 tag 始终带提交短 sha，保证同名 tag 不出现在两个不同内容上：
+          # 镜像站按 tag 缓存，可覆盖的 tag 会拿到陈旧层。
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${version}-${short_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 cargo 与 target
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          workspaces: ". -> target"
+
+      - name: 编译 release
+        env:
+          GIT_COMMIT: ${{ steps.meta.outputs.short_sha }}
+        run: cargo build --release
+
+      - name: 契约测试（发布门禁）
+        # 镜像一旦推送就会被 cops 引用，因此模型回归必须在推送前拦住。
+        env:
+          GIT_COMMIT: ${{ steps.meta.outputs.short_sha }}
+          CONTRACT_MODEL: v6small
+        run: cargo test --release -- --nocapture --test-threads=1 | tail -60
+
+      - name: 登录 GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送镜像
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/ocr/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=modelman-ocr
+            org.opencontainers.image.description=PP-OCR text recognition service (MNN, CPU)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 18080:8080 --memory=1500M "${IMAGE}:${IMAGE_TAG}"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/readyz >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18080/version
+          curl -fsS http://127.0.0.1:18080/models
+          curl -fsS -F image=@services/ocr/tests/fixtures/case_05.png \
+            http://127.0.0.1:18080/ocr | tee /tmp/ocr.json
+          python3 - <<'PY'
+          import json
+          payload = json.load(open("/tmp/ocr.json"))
+          assert payload["success"] is True, payload
+          assert payload["results"], payload
+          print("smoke ok:", payload["results"][0]["text"])
+          PY
+          docker rm -f smoke
+
+      - name: 发布信息
+        run: |
+          set -euo pipefail
+          {
+            echo "## OCR 服务已发布"
+            echo
+            echo "镜像：\`${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "digest：\`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "### cops 侧改动（apps/model-ocr/.env）"
+            echo
+            echo '```diff'
+            echo "-MODEL_OCR_IMAGE_TAG=v0.1.0-0000000"
+            echo "+MODEL_OCR_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}"
+            echo '```'
+            echo
+            echo "改完开 PR 合入 main，deploy.yml 会自动 SSH 到 cloud2 部署。"
+            echo "部署前请确认路由器/安全组没有把 9101 对公网开放（compose 默认只绑 127.0.0.1）。"
+          } >> "${GITHUB_STEP_SUMMARY}"

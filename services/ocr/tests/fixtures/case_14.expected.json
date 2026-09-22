@@ -1,0 +1,18 @@
+{
+  "conf_threshold": 0.30000001192092896,
+  "inference_ms": 14.368066,
+  "lines": [
+    {
+      "confidence": 0.9998705387115479,
+      "text": "赋能"
+    },
+    {
+      "confidence": 0.9999763369560242,
+      "text": "76"
+    }
+  ],
+  "min_similarity": 0.95,
+  "model": "v6small",
+  "raw_line_count": 2,
+  "source_image": "case_14.png"
+}

@@ -1,0 +1,14 @@
+{
+  "conf_threshold": 0.30000001192092896,
+  "inference_ms": 9.641608,
+  "lines": [
+    {
+      "confidence": 0.9964444041252136,
+      "text": "错过友尽"
+    }
+  ],
+  "min_similarity": 0.95,
+  "model": "v6small",
+  "raw_line_count": 1,
+  "source_image": "case_11.png"
+}
