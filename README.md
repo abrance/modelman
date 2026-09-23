@@ -20,11 +20,15 @@ modelman/
 │       ├── tests/fixtures/     # 契约测试样本与基线
 │       └── Dockerfile
 └── docs/
+    ├── design.md               # 系统设计：目标、约束、分层、选型与决策记录
+    ├── roadmap.md              # 规划：已交付、下一步、不做的事、未决问题
     ├── architecture.md         # 服务约定与目录职责
     ├── adding-a-service.md     # 新增服务的检查单
     ├── ocr-model-selection.md  # 档位实测对比
     └── deployment.md           # 镜像、镜像源与部署链路
 ```
+
+想先看全貌从 `docs/design.md` 开始；想知道下一步做什么看 `docs/roadmap.md`。
 
 ## 快速开始
 
