@@ -1,0 +1,6 @@
+# 合成样本：容器运行时日志，含 UUID 与绝对路径。
+level=info msg="started container" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b
+level=info msg="pulled image" id=7c2b4d6e-2c5e-4f70-9b0c-1d2e3f4a5b6c
+level=warn msg="container exited with code 137" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b
+level=error msg="readiness probe failed" id=7c2b4d6e-2c5e-4f70-9b0c-1d2e3f4a5b6c path=/app/healthz
+level=error msg="readiness probe failed" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b path=/app/readyz

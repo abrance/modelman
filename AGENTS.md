@@ -17,16 +17,19 @@
 | Docker + GHCR | 交付 |
 | GitHub Actions | 构建、测试、发布 |
 
-Python 服务（后续时序预测一类）也放在 `services/<name>/` 下，与 Rust 服务同级，
-各自带 `Dockerfile`，不加入 cargo workspace。
+Python 服务（日志聚类、时序预测一类）也放在 `services/<name>/` 下，与 Rust 服务同级，
+各自带 `Dockerfile`，不加入 cargo workspace。参考实现见 `services/logcluster`。
 
 ## 目录约定
 
 ```
-services/<name>/     单个服务：src/、models/、tests/fixtures/、Dockerfile
+services/<name>/     单个服务：src/、tests/fixtures/、service.mk、smoke.sh、Dockerfile
 registry/<name>.yaml 该服务运行的模型与版本（唯一事实来源）
 docs/                设计、规划、架构约定、扩展与部署说明
 ```
+
+`service.mk` 声明本服务的构建、测试、运行与冒烟命令，根 `Makefile` 与 CI 据此分派；
+`smoke.sh` 是容器冒烟检查，CI 与发布流程共用同一份。
 
 新增服务时先读 `docs/adding-a-service.md`，按其中的检查单逐项落实。
 
@@ -82,6 +85,10 @@ CI 按 `services/*/service.mk` 发现服务，所以新增服务不必改 Makefi
 4. **模型变更必须重新生成并 review 契约测试基线**，差异要能解释。
 5. **不要交付无法加载的模型**。若某个模型文件在推理后端加载失败，
    从目录中移除并在 `registry/<name>.yaml` 的 `excluded` 中记录原因。
+6. **没有权重文件的服务也要登记**：在 `registry/<name>.yaml` 里显式写
+   `weights: none` 并说明原因（例如日志聚类用的 Drain3 没有训练好的权重），
+   同时登记它的参数组合与运行期状态的格式。运行期状态不属于镜像，
+   回滚镜像不会回滚它，详见 `docs/deployment.md`。
 
 ## 推理相关规则
 

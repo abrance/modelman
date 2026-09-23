@@ -1,0 +1,30 @@
+{
+  "name": "case_05",
+  "line_count": 6,
+  "templates": [
+    "服务启动完成 监听端口 8080",
+    "服务启动完成 监听端口 <*>",
+    "用户 张三 登录成功",
+    "用户 <*> 登录成功",
+    "任务 数据同步 执行超时 耗时 30 秒",
+    "任务 数据同步 执行超时 耗时 <*> 秒"
+  ],
+  "cluster_ids": [
+    12,
+    12,
+    13,
+    13,
+    14,
+    14
+  ],
+  "change_types": [
+    "cluster_created",
+    "cluster_template_changed",
+    "cluster_created",
+    "cluster_template_changed",
+    "cluster_created",
+    "cluster_template_changed"
+  ],
+  "cluster_count_after": 14,
+  "total_size_after": 30
+}

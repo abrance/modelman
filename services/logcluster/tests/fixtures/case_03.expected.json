@@ -1,0 +1,27 @@
+{
+  "name": "case_03",
+  "line_count": 5,
+  "templates": [
+    "level=info msg=\"started container\" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b",
+    "level=info msg=\"pulled image\" id=7c2b4d6e-2c5e-4f70-9b0c-1d2e3f4a5b6c",
+    "level=warn msg=\"container exited with code 137\" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b",
+    "level=error msg=\"readiness probe failed\" id=7c2b4d6e-2c5e-4f70-9b0c-1d2e3f4a5b6c path=/app/healthz",
+    "level=error msg=\"readiness probe failed\" <*> <*>"
+  ],
+  "cluster_ids": [
+    5,
+    6,
+    7,
+    8,
+    8
+  ],
+  "change_types": [
+    "cluster_created",
+    "cluster_created",
+    "cluster_created",
+    "cluster_created",
+    "cluster_template_changed"
+  ],
+  "cluster_count_after": 8,
+  "total_size_after": 18
+}

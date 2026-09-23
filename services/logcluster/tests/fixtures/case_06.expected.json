@@ -1,0 +1,36 @@
+{
+  "name": "case_06",
+  "line_count": 8,
+  "templates": [
+    "2026-09-23T10:06:01Z ERROR request failed status=502 upstream=payments-svc",
+    "<*> ERROR request failed <*> upstream=payments-svc",
+    "at com.example.PaymentClient.call(PaymentClient.java:88)",
+    "at <*>",
+    "at <*>",
+    "at <*>",
+    "Caused by: java.net.SocketTimeoutException: Read timed out",
+    "Caused by: java.net.ConnectException: Connection refused"
+  ],
+  "cluster_ids": [
+    15,
+    15,
+    16,
+    16,
+    16,
+    16,
+    17,
+    18
+  ],
+  "change_types": [
+    "cluster_created",
+    "cluster_template_changed",
+    "cluster_created",
+    "cluster_template_changed",
+    "none",
+    "none",
+    "cluster_created",
+    "cluster_created"
+  ],
+  "cluster_count_after": 18,
+  "total_size_after": 38
+}

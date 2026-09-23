@@ -1,0 +1,7 @@
+# 合成样本：资源类日志，数字与容量单位。
+disk usage 95% on /dev/sda1
+disk usage 12% on /dev/sdb2
+memory usage 8192MB of 16384MB
+memory usage 4096MB of 16384MB
+cpu load 3.75 over 60s
+cpu load 0.42 over 60s

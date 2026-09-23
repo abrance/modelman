@@ -3,7 +3,16 @@
 docs
 **/*.md
 **/.DS_Store
-services/ocr/tests
+
+# Python 服务：本地 venv、字节码缓存、测试与基线生成工具都不进镜像
+**/.venv
+**/__pycache__
+services/*/tests
+services/logcluster/tools
+
+# 本地跑出来的模板树状态同样不进镜像
+services/*/.state
+
 services/ocr/target
 
 # Only the release binary is needed from the build directory. The parent

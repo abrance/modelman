@@ -48,7 +48,22 @@ apps/model-ocr/
 |---|---|
 | model-ocr | 9101 |
 | model-forecast（预留） | 9102 |
-| model-log-cluster（预留） | 9103 |
+| model-logcluster | 9103 |
+
+## 有状态服务：日志聚类的额外要求
+
+`model-ocr` 是无状态的：镜像里带着权重，重启不影响行为。`model-logcluster`
+不是——它的“模型”是运行期累积出来的模板树，落在 `STATE_DIR`。这带来两件
+部署侧必须知道的事：
+
+1. **必须挂卷。** `cops` 侧的 `compose.yaml` 要给 `/app/state` 挂一个 volume，
+   否则每次重建容器都从空树开始，历史模板全部丢失。
+2. **回滚不是只改 tag。** 把 `MODEL_LOGCLUSTER_IMAGE_TAG` 改回上一版会一起带回旧的
+   状态格式。状态里的 `schema_version` 与聚类参数（`SIM_TH` 等）与当前配置不一致时，
+   服务会拒绝加载：`/readyz` 503、`/models` 给出原因、业务端点 503，
+   并且**不覆盖**已有的状态文件。确认不再需要旧状态后手工删除状态文件再重启即可。
+
+默认单副本：状态在本地卷里，横向扩容前必须先把状态外置（见 `docs/roadmap.md`）。
 
 ## 暴露方式
 

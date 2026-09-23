@@ -14,6 +14,7 @@
 | 访问日志 | 已上线 | `tower_http=debug`，形如 `finished processing request latency=28 ms status=200` |
 | 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → SSH compose → 健康门禁 |
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
+| 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
 
 实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
 云主机端到端 28–54 ms；镜像 133 MB（压缩）/ 214 MB（落盘）。
@@ -39,7 +40,7 @@
 |---|---|---|
 | OCR（已上线） | 16.8 MiB（单档常驻） | 不适用 |
 | 时序预测（Chronos-2 / TimesFM 2.5 一类，约 200M 参数） | 1.0–1.3 GB | 300–500 MB（ONNX int8） |
-| 日志聚类（Drain3，纯 Python，无神经网络） | 150–300 MB | 不适用 |
+| 日志聚类（Drain3，纯 Python，无神经网络） | 40 MiB 起步（实测 11 个模板），随模板树增长 | 不适用 |
 
 OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 
@@ -60,19 +61,28 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 接口契约的一个额外要求：预测类输出需要声明形状与分位数语义，契约测试里除了文本相似度，
 应改为断言输出形状、分位数单调性与数值容差。
 
-### 四、日志聚类服务
+### 四、日志聚类服务（已实现，待部署）
 
-- 算法为 Drain3 在线模板挖掘，无神经网络权重，无需模型仓库。
-- 技术栈 Python + FastAPI（参考 `kuba` 中已有的实现）。
-- **有状态**：模板挖掘器持有状态，必须持久化到卷或外部存储；因此该服务默认单副本，
-  横向扩容前必须先把状态外置。
-- 端口 `9103`。
+- 代码在 `services/logcluster/`：Drain3 在线模板挖掘，**没有神经网络权重**，
+  所以 `registry/logcluster.yaml` 里登记的是聚类参数与状态格式，而不是权重。
+- 技术栈 Python + FastAPI，路由与响应字段与 NAS 上的旧实现保持一致，
+  调用方不需要改代码（失败响应多了一个 `error` 字段）。
+- **有状态**：模板树落在 `STATE_DIR` 的卷里，默认单副本，横向扩容前必须先把状态外置。
+  状态带 schema 与聚类参数校验，不兼容时降级为 `/readyz` 503、业务端点 503，
+  并且不覆盖旧状态文件（见 `services/logcluster/README.md`）。
+- 端口 `9103`，部署侧的状态卷要求见 `docs/deployment.md`。
+- 实测：镜像 158 MB，常驻 40 MiB（11 个模板 / 24 行），24 行聚类 66 ms。
+- 剩余工作：`cops` 侧新增 `apps/model-logcluster/`（含 `/app/state` 状态卷），
+  然后打 `logcluster/v0.1.0` tag 走发布链路。
+- 已知取舍：模板频繁变化时每次变化都会压缩 + `fsync` 整个状态文件，
+  所以“新模板很多”的突发流量比“命中已有模板”贵得多。
 
 ## 中期
 
 | 项 | 说明 | 触发条件 |
 |---|---|---|
 | 访问日志提到 INFO | 现在每个请求两行 DEBUG（`on_request` + `on_response`）。改成一条 INFO 级别需要改代码并发新版本，收益是日志量减半、级别语义更准 | 日志量成为问题，或下一次因其它原因发版时一并做 |
+| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。日志聚类的代码已按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对 Python 服务是空操作 | 出现第二个 Python 服务时把 `ruff check` / `ruff format --check` 接进 CI |
 | 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 出现第二个服务时评估；只有一个服务时收益低于复杂度 |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
 | 指标接入抓取 | `/metrics` 已就绪，但还没有 Prometheus 抓取 `127.0.0.1:9101` | 需要在 Grafana 上看曲线时 |

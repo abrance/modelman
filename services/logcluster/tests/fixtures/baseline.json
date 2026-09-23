@@ -1,0 +1,140 @@
+{
+  "generated_by": "tools/gen_fixtures.py",
+  "drain3_version": "0.9.11",
+  "profile": {
+    "id": "default",
+    "sim_th": 0.4,
+    "depth": 4,
+    "max_children": 100,
+    "mask_rules": [],
+    "parametrize_numeric": true,
+    "snapshot_compress": true
+  },
+  "cases": [
+    "case_01",
+    "case_02",
+    "case_03",
+    "case_04",
+    "case_05",
+    "case_06"
+  ],
+  "final_cluster_count": 18,
+  "final_total_size": 38,
+  "templates": [
+    {
+      "cluster_id": 1,
+      "template": "<*> INFO user <*> logged in from <*>",
+      "size": 3
+    },
+    {
+      "cluster_id": 2,
+      "template": "<*> WARN user <*> failed login attempt from <*>",
+      "size": 2
+    },
+    {
+      "cluster_id": 3,
+      "template": "<*> INFO user <*> logged out",
+      "size": 2
+    },
+    {
+      "cluster_id": 4,
+      "template": "<*> - - <*> +0800] <*> <*> HTTP/1.1\" <*> <*>",
+      "size": 6
+    },
+    {
+      "cluster_id": 5,
+      "template": "level=info msg=\"started container\" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b",
+      "size": 1
+    },
+    {
+      "cluster_id": 6,
+      "template": "level=info msg=\"pulled image\" id=7c2b4d6e-2c5e-4f70-9b0c-1d2e3f4a5b6c",
+      "size": 1
+    },
+    {
+      "cluster_id": 7,
+      "template": "level=warn msg=\"container exited with code 137\" id=3f9a1c2e-1b4d-4e6f-8a9b-0c1d2e3f4a5b",
+      "size": 1
+    },
+    {
+      "cluster_id": 8,
+      "template": "level=error msg=\"readiness probe failed\" <*> <*>",
+      "size": 2
+    },
+    {
+      "cluster_id": 9,
+      "template": "disk usage <*> on <*>",
+      "size": 2
+    },
+    {
+      "cluster_id": 10,
+      "template": "memory usage <*> of 16384MB",
+      "size": 2
+    },
+    {
+      "cluster_id": 11,
+      "template": "cpu load <*> over 60s",
+      "size": 2
+    },
+    {
+      "cluster_id": 12,
+      "template": "服务启动完成 监听端口 <*>",
+      "size": 2
+    },
+    {
+      "cluster_id": 13,
+      "template": "用户 <*> 登录成功",
+      "size": 2
+    },
+    {
+      "cluster_id": 14,
+      "template": "任务 数据同步 执行超时 耗时 <*> 秒",
+      "size": 2
+    },
+    {
+      "cluster_id": 15,
+      "template": "<*> ERROR request failed <*> upstream=payments-svc",
+      "size": 2
+    },
+    {
+      "cluster_id": 16,
+      "template": "at <*>",
+      "size": 4
+    },
+    {
+      "cluster_id": 17,
+      "template": "Caused by: java.net.SocketTimeoutException: Read timed out",
+      "size": 1
+    },
+    {
+      "cluster_id": 18,
+      "template": "Caused by: java.net.ConnectException: Connection refused",
+      "size": 1
+    }
+  ],
+  "replay_new_clusters": 0,
+  "match_probes": [
+    {
+      "line": "2026-09-23T10:09:01Z INFO user frank logged in from 10.0.0.9",
+      "matched": true,
+      "cluster_id": 1,
+      "template": "<*> INFO user <*> logged in from <*>"
+    },
+    {
+      "line": "disk usage 77% on /dev/sdc3",
+      "matched": true,
+      "cluster_id": 9,
+      "template": "disk usage <*> on <*>"
+    },
+    {
+      "line": "2026-09-23T10:09:02Z DEBUG cache hit ratio 0.93",
+      "matched": false,
+      "cluster_id": null,
+      "template": null
+    }
+  ],
+  "budget": {
+    "measured_total_ms": 72.87,
+    "total_ms": 2000.0
+  }
+}
