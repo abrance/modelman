@@ -58,6 +58,7 @@ curl -s -F image=@services/ocr/tests/fixtures/case_05.png \
 
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
+| GET | `/` | 否 | 根路径存活探针，等价 `/livez`；反代与外部监控探根路径用 |
 | GET | `/health`, `/healthz` | 否 | 存活状态，含已加载模型与运行时长 |
 | GET | `/livez` | 否 | 进程存活 |
 | GET | `/readyz` | 否 | 默认档位已常驻，可以接流量 |

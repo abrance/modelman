@@ -10,7 +10,7 @@
 | OCR 服务（PP-OCRv6 small/tiny + v5，MNN，CPU） | 已上线 | `services/ocr`，容器 healthy |
 | 标准镜像交付 | 已上线 | `ghcr.io/abrance/modelman-ocr:v0.1.0-e12648f`，公开包，匿名可拉 |
 | 契约测试门禁 | 已生效 | 20 张样本 + 基线，逐样本比对行数与相似度 |
-| 服务契约端点 | 已上线 | `/livez` `/healthz` `/readyz` `/version` `/models` `/metrics` `/ocr` `/ocr/batch` |
+| 服务契约端点 | 已上线 | `/` `/livez` `/healthz` `/readyz` `/version` `/models` `/metrics` `/ocr` `/ocr/batch` |
 | 访问日志 | 已上线 | `tower_http=debug`，形如 `finished processing request latency=28 ms status=200` |
 | 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → SSH compose → 健康门禁 |
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |

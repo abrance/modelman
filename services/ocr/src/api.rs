@@ -657,7 +657,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // `/health` mirrors the legacy endpoint; `/healthz` is what deployment
     // tooling probes. All of them stay reachable without a token so a
     // container can be health-checked before credentials are injected.
+    // 根路径也返回 200：反代与外部探活器常直接探 `/`，404 会被当成不健康。
     let open = Router::new()
+        .route("/", get(livez))
         .route("/health", get(health))
         .route("/healthz", get(health))
         .route("/livez", get(livez))

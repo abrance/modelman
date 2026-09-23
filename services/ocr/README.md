@@ -26,6 +26,7 @@ PP-OCR 检测 + 识别服务，通过 MNN 在 CPU 上推理。取代了此前手
 ## 接口
 
 ```
+GET  /            存活探针，等价 /livez（反代/监控探根路径）
 GET  /healthz      liveness + 已加载模型
 GET  /readyz       默认档位是否常驻
 GET  /version      版本 / 提交 / 生效配置
