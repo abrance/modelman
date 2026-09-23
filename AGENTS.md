@@ -25,10 +25,20 @@ Python 服务（后续时序预测一类）也放在 `services/<name>/` 下，�
 ```
 services/<name>/     单个服务：src/、models/、tests/fixtures/、Dockerfile
 registry/<name>.yaml 该服务运行的模型与版本（唯一事实来源）
-docs/                架构、扩展与部署说明
+docs/                设计、规划、架构约定、扩展与部署说明
 ```
 
 新增服务时先读 `docs/adding-a-service.md`，按其中的检查单逐项落实。
+
+## 先读哪份文档
+
+| 想了解 | 看哪里 |
+|---|---|
+| 为什么要这么设计、受什么约束、关键决策与代价 | `docs/design.md` |
+| 已完成什么、下一步做什么、哪些明确不做 | `docs/roadmap.md` |
+| 仓库内的目录职责、分层要求、推理侧硬约束 | `docs/architecture.md` |
+| 怎么新增一个服务 | `docs/adding-a-service.md` |
+| 镜像与部署链路 | `docs/deployment.md` |
 
 ## 服务接口约定
 
