@@ -1,11 +1,17 @@
 """容器健康检查用的自探活。
 
-镜像里不装 curl，所以用标准库直接发一个 HTTP/1.1 GET。做成独立模块而不是
+镜像里不装 curl/wget，所以用标准库直接发一个 HTTP/1.1 GET。做成独立模块而不是
 给 main 加参数，是为了让 healthcheck 的依赖面尽可能小（不需要 fastapi 起得来）。
+
+**探的是 `/readyz` 而不是 `/healthz`。** 状态文件不可用时进程仍在监听、
+`/healthz` 照样 200，但业务端点一律 503；把健康状态绑在 `/healthz` 上会让容器
+显示 healthy 而实际不可用，部署脚本的健康门也就形同虚设。用 `HEALTHCHECK_PATH`
+可以改，但默认值就是想让"容器健康"等于"能提供服务"。
 """
 
 from __future__ import annotations
 
+import os
 import socket
 import sys
 
@@ -13,8 +19,10 @@ from .config import DEFAULT_LISTEN_ADDR, ConfigError, parse_listen_addr
 
 TIMEOUT_SECS = 5.0
 
+DEFAULT_PATH = "/readyz"
 
-def probe(listen_addr: str, path: str = "/healthz") -> int:
+
+def probe(listen_addr: str, path: str = DEFAULT_PATH) -> int:
     try:
         host, port = parse_listen_addr(listen_addr)
     except ConfigError as exc:
@@ -53,9 +61,9 @@ def probe(listen_addr: str, path: str = "/healthz") -> int:
 
 
 def main() -> None:
-    import os
-
-    raise SystemExit(probe(os.environ.get("LISTEN_ADDR", DEFAULT_LISTEN_ADDR)))
+    listen_addr = os.environ.get("LISTEN_ADDR", DEFAULT_LISTEN_ADDR)
+    path = os.environ.get("HEALTHCHECK_PATH", DEFAULT_PATH)
+    raise SystemExit(probe(listen_addr, path))
 
 
 if __name__ == "__main__":

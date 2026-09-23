@@ -43,13 +43,16 @@ ENV STATE_DIR=/app/state \
     MAX_LINES=2000 \
     MAX_LINE_CHARS=8192 \
     MAX_BYTES=8388608 \
+    HEALTHCHECK_PATH=/readyz \
     LOG_LEVEL=info
 
 RUN mkdir -p /app/state
 
 EXPOSE 8080
 
-# 自带探活，镜像里不需要 curl/wget
+# 自带探活，镜像里不需要 curl/wget。
+# 探的是 /readyz：状态不可用时进程在跑、/healthz 仍是 200，
+# 只有 /readyz 会 503，把健康状态绑在它上面才不是假阳性。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-m", "src.healthcheck"]
 

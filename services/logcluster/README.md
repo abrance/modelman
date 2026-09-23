@@ -98,6 +98,7 @@
 | `MAX_LINES` | `2000` | 单请求最大行数 |
 | `MAX_LINE_CHARS` | `8192` | 单行最大字符数 |
 | `MAX_BYTES` | `8388608` | 单请求体上限（8 MiB） |
+| `HEALTHCHECK_PATH` | `/readyz` | 容器自探活探的路径 |
 | `LOG_LEVEL` | `info` | 日志级别 |
 | `AUTH_TOKEN` | 未设置 | 设置后业务端点与 `/metrics` 需要 `X-Auth-Token` 或 `Authorization: Bearer` |
 
@@ -129,6 +130,7 @@
 |---|---|
 | 进程 | 正常启动并监听 |
 | `/readyz` | 503，`error` 里说明哪一项不兼容 |
+| 容器健康状态 | `unhealthy`（镜像的 HEALTHCHECK 探的就是 `/readyz`） |
 | `/models` | `loaded: false`，`load_error` 给出原因 |
 | `/cluster`、`/match`、`/clusters` | 503，不返回任何聚类结果 |
 | 状态文件 | **不写入**，旧状态保持原样 |
