@@ -7,6 +7,8 @@
 
 ```
 services/forecast/
+  service.mk            构建入口，根 Makefile 与 CI 据此分派
+  smoke.sh              容器冒烟检查，CI 与发布流程共用
   Cargo.toml 或 requirements.txt
   Dockerfile
   README.md
@@ -17,6 +19,30 @@ services/forecast/
 
 Rust 服务需要在根 `Cargo.toml` 的 `members` 里加一项；Python 服务不加，
 但要在自己的目录里带完整依赖声明与 `Dockerfile`。
+
+### 声明构建入口
+
+根 `Makefile` 只定义通用目标，具体命令由 `services/<name>/service.mk` 声明，
+所以新增服务不需要改根 `Makefile`：
+
+| 变量 | 对应目标 | 说明 |
+|---|---|---|
+| `SERVICE_BUILD` | `make build` | 产出 release 产物 |
+| `SERVICE_TEST` | `make test` | 单元 + 契约 + HTTP 测试 |
+| `SERVICE_RUN` | `make run` | 前台启动 |
+| `SERVICE_SMOKE` | `make smoke` | 调用本服务的 `smoke.sh` |
+| `SERVICE_FIXTURES` | `make fixtures` | 重新生成契约基线 |
+| `SERVICE_CLEAN` | `make clean` | 清理构建产物 |
+
+少定义哪个，跑对应目标时就报哪个，不会静默成功。
+
+`make image` 与 `make image-run` 是通用的：前者按 `services/<name>/Dockerfile`
+构建 `modelman-<name>:<TAG>`，后者把 `PORT` 映射到容器 8080。
+`smoke.sh` 从环境变量读 `IMAGE` 与 `PORT`，行为要求：等 `/readyz`、打真实请求、
+容器提前退出或超时时把日志打出来并以非零退出。
+
+CI 遍历 `services/*/service.mk` 得到服务矩阵，**新增服务不需要改
+`.github/workflows/ci.yml`**。
 
 ## 二、实现接口约定
 
@@ -63,9 +89,12 @@ Rust 服务需要在根 `Cargo.toml` 的 `members` 里加一项；Python 服务�
 ```bash
 make build SERVICE=forecast
 make test  SERVICE=forecast
-make image SERVICE=forecast
-docker run --rm -p 8080:8080 modelman-forecast:local
+make smoke SERVICE=forecast
 ```
+
+`make smoke` 会构建镜像、起容器、等就绪、打一次真实请求并报告健康状态，
+行为由 `services/forecast/smoke.sh` 定义，CI 与发布流程跑的是同一个脚本。
+需要手工进容器看时用 `make image` + `make image-run`。
 
 确认容器内 `/healthz`、`/readyz`、`/version`、`/models` 都正常，
 并且健康检查用的 `--healthcheck` 参数在镜像内可用（镜像里不装 curl 时这是唯一手段）。
@@ -74,6 +103,8 @@ docker run --rm -p 8080:8080 modelman-forecast:local
 
 1. 复制 `.github/workflows/release-ocr.yml` 为 `release-forecast.yml`，
    把触发 tag 前缀改为 `forecast/v*`，镜像名改为 `modelman-forecast`。
+   CI（`ci.yml`）不用动，它按目录发现服务。发布 workflow 保持一服务一份，
+   因为 tag 前缀与镜像名本来就不同。
 2. 在 `cops` 仓库新增 `apps/model-forecast/`，包含 `.env`、`compose.yaml`、`app.conf`，
    端口从 91xx 段取下一个可用值。
 3. 按 `docs/deployment.md` 的说明确认暴露方式与资源上限。

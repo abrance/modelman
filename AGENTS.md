@@ -59,11 +59,15 @@ docs/                设计、规划、架构约定、扩展与部署说明
 ## 构建与测试
 
 ```bash
-make build      # cargo build --release
+make build      # 构建该服务的 release 产物
 make test       # 单元 + 契约 + HTTP 测试，会真实加载模型推理
-make image      # 构建 docker 镜像
+make image      # 构建该服务的 docker 镜像
 make fixtures   # 重新生成契约测试基线
 ```
+
+`make` 目标是服务无关的分派器：具体命令写在 `services/<name>/service.mk`，
+CI 按 `services/*/service.mk` 发现服务，所以新增服务不必改 Makefile 与 `ci.yml`。
+切换服务用 `make <目标> SERVICE=<name>`。
 
 要求：改动提交前 `make fmt-check`、`make clippy`、`make test` 三条全绿。
 

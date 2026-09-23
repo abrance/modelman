@@ -18,6 +18,8 @@ modelman/
 │       ├── models/             # MNN 模型文件与字符字典
 │       ├── src/                # 服务代码
 │       ├── tests/fixtures/     # 契约测试样本与基线
+│       ├── service.mk          # 本服务的构建入口，根 Makefile 据此分派
+│       ├── smoke.sh            # 容器冒烟检查，CI 与发布共用
 │       └── Dockerfile
 └── docs/
     ├── design.md               # 系统设计：目标、约束、分层、选型与决策记录
@@ -33,11 +35,16 @@ modelman/
 ## 快速开始
 
 ```bash
-make build     # cargo build --release
+make build     # 构建该服务的 release 产物
 make test      # 单元 + 契约 + HTTP 测试（会真实加载模型推理）
 make run       # 在 0.0.0.0:8080 启动服务
 make image     # 构建 docker 镜像 modelman-ocr:local
+make smoke     # 构建镜像、起容器、打一次真实识别
 ```
+
+目标是服务无关的分派器：具体命令写在 `services/<name>/service.mk`，
+CI 按目录发现服务。切换或新增服务用 `make <目标> SERVICE=<name>`，
+不需要改根 `Makefile` 与 `.github/workflows/ci.yml`。
 
 对运行中的服务做一次冒烟：
 

@@ -100,27 +100,13 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: 容器冒烟测试
+        # 与 CI 共用 services/ocr/smoke.sh，让"镜像能跑"只有一处定义。
+        # 这里刻意不走 `make smoke`：那条路径会先在本地重建镜像，
+        # 而这一步要验的是刚从 GHCR 推上去的那个制品。
         env:
-          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
-        run: |
-          set -euo pipefail
-          docker run -d --name smoke -p 18080:8080 --memory=1500M "${IMAGE}:${IMAGE_TAG}"
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18080/readyz >/dev/null 2>&1; then break; fi
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:18080/version
-          curl -fsS http://127.0.0.1:18080/models
-          curl -fsS -F image=@services/ocr/tests/fixtures/case_05.png \
-            http://127.0.0.1:18080/ocr | tee /tmp/ocr.json
-          python3 - <<'PY'
-          import json
-          payload = json.load(open("/tmp/ocr.json"))
-          assert payload["success"] is True, payload
-          assert payload["results"], payload
-          print("smoke ok:", payload["results"][0]["text"])
-          PY
-          docker rm -f smoke
+          IMAGE: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          PORT: "18080"
+        run: bash services/ocr/smoke.sh
 
       - name: 发布信息
         run: |

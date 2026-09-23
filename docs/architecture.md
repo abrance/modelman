@@ -39,6 +39,13 @@
 | `src/api.rs` | HTTP 层：路由、请求校验、响应结构、鉴权、错误码映射 |
 | `src/metrics.rs` | Prometheus 暴露，零外部依赖 |
 
+服务目录里另有两个与具体技术栈无关的约定文件：
+
+| 文件 | 职责 |
+|---|---|
+| `service.mk` | 声明 `SERVICE_BUILD` / `SERVICE_TEST` / `SERVICE_RUN` / `SERVICE_SMOKE` / `SERVICE_FIXTURES` / `SERVICE_CLEAN`，根 `Makefile` 与 CI 据此分派 |
+| `smoke.sh` | 容器冒烟检查，CI 与发布流程共用同一份 |
+
 分层要求：
 
 1. 环境变量只在 `config.rs` 读取，便于测试时直接构造配置结构体。
