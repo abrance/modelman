@@ -1,0 +1,136 @@
+name: Release log cluster service
+
+# 发布由 tag 触发，tag 约定为 <service>/v<semver>，例如 logcluster/v0.1.0。
+# 流程与仓库既有发布链路一致：CI 只负责产出镜像，部署由 cops 改 tag 完成。
+#
+# 与 release-ocr.yml 的差别：这个服务是 Python，不需要 Rust 工具链，
+# 也不需要先在 runner 上编译二进制——依赖由 Dockerfile 在镜像里装。
+on:
+  push:
+    tags:
+      - "logcluster/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 logcluster/v0.1.0），用于重跑发布"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-logcluster-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-logcluster
+
+jobs:
+  release:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本与提交
+        id: meta
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${ref#logcluster/}"
+          if ! printf '%s' "${version}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag 必须形如 logcluster/v1.2.3，实际为 ${ref}" >&2
+            exit 1
+          fi
+
+          # src/build_info.py 里的 VERSION 是版本的唯一来源，tag 必须与它一致。
+          # 不一致的话镜像里报的版本会和 tag 对不上，运维就失去了判断依据。
+          declared="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' services/logcluster/src/build_info.py)"
+          if [ "v${declared}" != "${version}" ]; then
+            echo "tag 是 ${version}，但 services/logcluster/src/build_info.py 里写的是 ${declared}" >&2
+            exit 1
+          fi
+
+          # 与 release-ocr.yml 一致：短 sha 取 7 位
+          short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
+          # 镜像 tag 始终带提交短 sha，保证同名 tag 不出现在两个不同内容上：
+          # 镜像站按 tag 缓存，可覆盖的 tag 会拿到陈旧层。
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${version}-${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+
+      - name: 契约测试（发布门禁）
+        # 镜像一旦推送就会被 cops 引用，因此模型回归必须在推送前拦住。
+        run: make test SERVICE=logcluster
+
+      - name: 登录 GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送镜像
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/logcluster/Dockerfile
+          push: true
+          platforms: linux/amd64
+          # 镜像里没有 .git，提交与构建时间只能构建期注入
+          build-args: |
+            GIT_COMMIT=${{ steps.meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=modelman-logcluster
+            org.opencontainers.image.description=Drain3 log template mining service (FastAPI)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试
+        # 与 CI 共用 services/logcluster/smoke.sh，让"镜像能跑"只有一处定义。
+        # 这里刻意不走 `make smoke`：那条路径会先在本地重建镜像，
+        # 而这一步要验的是刚从 GHCR 推上去的那个制品。
+        env:
+          IMAGE: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          PORT: "18080"
+        run: bash services/logcluster/smoke.sh
+
+      - name: 发布信息
+        run: |
+          set -euo pipefail
+          {
+            echo "## 日志聚类服务已发布"
+            echo
+            echo "镜像：\`${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "digest：\`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "### cops 侧改动（apps/model-logcluster/.env）"
+            echo
+            echo '```diff'
+            echo "-MODEL_LOGCLUSTER_IMAGE_TAG=v0.1.0-0000000000"
+            echo "+MODEL_LOGCLUSTER_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}"
+            echo '```'
+            echo
+            echo "这个服务是**有状态**的，部署时确认两件事："
+            echo
+            echo "1. \`compose.yaml\` 给 \`/app/state\` 挂了 volume；"
+            echo "2. 状态里的 \`schema_version\` 与聚类参数与本次镜像一致。"
+            echo "   不一致时服务会降级为 \`/readyz\` 503 并拒绝覆盖旧状态，"
+            echo "   回滚不是只改 tag —— 详见 \`docs/deployment.md\`。"
+            echo
+            echo "改完开 PR 合入 main，deploy.yml 会自动 SSH 到云主机部署。"
+            echo "部署前请确认路由器/安全组没有把 9103 对公网开放（compose 默认只绑 127.0.0.1）。"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,30 @@
+{
+  "name": "case_02",
+  "line_count": 6,
+  "templates": [
+    "192.0.2.10 - - [23/Sep/2026:10:01:01 +0800] \"GET /api/v1/items HTTP/1.1\" 200 512",
+    "<*> - - <*> +0800] \"GET /api/v1/items HTTP/1.1\" 200 <*>",
+    "<*> - - <*> +0800] \"GET /api/v1/items HTTP/1.1\" <*> <*>",
+    "<*> - - <*> +0800] <*> <*> HTTP/1.1\" <*> <*>",
+    "<*> - - <*> +0800] <*> <*> HTTP/1.1\" <*> <*>",
+    "<*> - - <*> +0800] <*> <*> HTTP/1.1\" <*> <*>"
+  ],
+  "cluster_ids": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "change_types": [
+    "cluster_created",
+    "cluster_template_changed",
+    "cluster_template_changed",
+    "cluster_template_changed",
+    "none",
+    "none"
+  ],
+  "cluster_count_after": 4,
+  "total_size_after": 13
+}

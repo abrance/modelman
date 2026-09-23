@@ -1,0 +1,8 @@
+# 合成样本：应用 INFO/WARN 日志。全部为构造数据，不含任何真实信息。
+2026-09-23T10:00:01Z INFO user alice logged in from 10.0.0.1
+2026-09-23T10:00:02Z INFO user bob logged in from 10.0.0.2
+2026-09-23T10:00:03Z INFO user carol logged in from 10.0.0.3
+2026-09-23T10:00:04Z WARN user dave failed login attempt from 10.0.0.4
+2026-09-23T10:00:05Z WARN user erin failed login attempt from 10.0.0.5
+2026-09-23T10:00:06Z INFO user alice logged out
+2026-09-23T10:00:07Z INFO user bob logged out

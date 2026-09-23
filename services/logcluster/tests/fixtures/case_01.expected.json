@@ -1,0 +1,33 @@
+{
+  "name": "case_01",
+  "line_count": 7,
+  "templates": [
+    "2026-09-23T10:00:01Z INFO user alice logged in from 10.0.0.1",
+    "<*> INFO user <*> logged in from <*>",
+    "<*> INFO user <*> logged in from <*>",
+    "2026-09-23T10:00:04Z WARN user dave failed login attempt from 10.0.0.4",
+    "<*> WARN user <*> failed login attempt from <*>",
+    "2026-09-23T10:00:06Z INFO user alice logged out",
+    "<*> INFO user <*> logged out"
+  ],
+  "cluster_ids": [
+    1,
+    1,
+    1,
+    2,
+    2,
+    3,
+    3
+  ],
+  "change_types": [
+    "cluster_created",
+    "cluster_template_changed",
+    "none",
+    "cluster_created",
+    "cluster_template_changed",
+    "cluster_created",
+    "cluster_template_changed"
+  ],
+  "cluster_count_after": 3,
+  "total_size_after": 7
+}

@@ -57,7 +57,7 @@ build: service-check ## 构建该服务的 release 产物
 	$(SERVICE_BUILD)
 
 .PHONY: test
-test: service-check ## 运行单元测试、契约测试与 HTTP 测试
+test: build ## 运行单元测试、契约测试与 HTTP 测试
 	$(call need,SERVICE_TEST)
 	$(SERVICE_TEST)
 
@@ -68,7 +68,7 @@ run: build ## 前台启动服务
 
 .PHONY: image
 image: build ## 构建该服务的 docker 镜像
-	docker build -f $(SERVICE_DIR)/Dockerfile -t $(IMAGE):$(TAG) .
+	docker build -f $(SERVICE_DIR)/Dockerfile $(SERVICE_IMAGE_ARGS) -t $(IMAGE):$(TAG) .
 
 .PHONY: image-run
 image-run: ## 运行镜像并把 $(PORT) 映射到容器 8080

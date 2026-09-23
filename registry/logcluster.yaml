@@ -1,0 +1,90 @@
+# 模型注册表：每个服务实际运行的模型与配置
+#
+# 这里是"哪个模型在跑"的唯一事实来源。改这个文件意味着要出新镜像，
+# 与改代码走同一条发布链路（打 tag -> CI 构建 -> 改 cops 的 image tag）。
+#
+# 约定：
+# - revision 必须是不可变标识（HF 提交 sha、模型文件 sha256 或版本号），
+#   不要写分支名或可覆盖的 tag。
+# - 权重已在仓库内的小模型直接写 sha256；走 HuggingFace 的模型写 revision。
+# - 任何条目变更都要同步更新 services/<name>/tests/fixtures 的基线。
+
+services:
+  ocr:
+    task: ocr
+    runtime: rust-mnn
+    default_model: v6small
+    # 全部随镜像交付，运行时由 PRELOAD_MODELS 决定常驻哪一个
+    tiers:
+      - id: v6tiny
+        source: PP-OCRv6 tiny (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv6_tiny_det.mnn
+          rec: PP-OCRv6_tiny_rec.mnn
+          keys: ppocr_keys_v6_tiny.txt
+      - id: v6small
+        source: PP-OCRv6 small (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv6_small_det.mnn
+          rec: PP-OCRv6_small_rec.mnn
+          keys: ppocr_keys_v6_small.txt
+      - id: v5
+        source: PP-OCRv5 mobile (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv5_mobile_det.mnn
+          rec: PP-OCRv5_mobile_rec.mnn
+          keys: ppocr_keys_v5.txt
+    # 已知不可用：PP-OCRv6 medium 的 .mnn 在 MNN 中加载失败
+    # （Engine creation failed），上游工具同样失败，故不随镜像交付。
+    excluded:
+      - id: v6medium
+        reason: MNN model load fails with "Engine creation failed"; reproduced with upstream tooling
+    contract:
+      fixtures: services/ocr/tests/fixtures
+      baseline: services/ocr/tests/fixtures/baseline.json
+      min_similarity: 0.95
+
+  # 日志聚类：本服务没有神经网络权重，因此没有 tiers / files / sha256。
+  # "模型"是运行期累积出来的模板树，它的参数就是下面这个 profile，
+  # 状态的累积结果落在 STATE_DIR，不进镜像（进镜像的是算法与参数）。
+  logcluster:
+    task: log_template_mining
+    runtime: python-fastapi-drain3
+    default_model: default
+    weights: none
+    weights_reason: >-
+      Drain3 是无监督在线模板挖掘，没有训练好的权重文件；
+      "模型"由 profile 参数与运行期累积的模板树共同决定。
+    # 与 src/config.py 的默认值、tests/fixtures/baseline.json 的 profile 三处必须一致，
+    # 契约测试会断言这一点。
+    profile:
+      id: default
+      sim_th: 0.4
+      depth: 4
+      max_children: 100
+      mask_rules: []
+      parametrize_numeric: true
+      snapshot_compress: true
+    state:
+      # 累积状态。回滚镜像不会回滚它，格式变更必须升 STATE_SCHEMA_VERSION。
+      schema_version: 1
+      file: drain_state.json
+      dir_env: STATE_DIR
+      # 状态与 profile 不一致时服务拒绝加载（/readyz 503，且不覆盖旧状态）
+      profile_checked: true
+      atomic_write: true
+      replicas: 1
+      replicas_reason: 状态在本地卷里，扩容前必须先外置状态
+    excluded:
+      - id: masked-numeric
+        reason: >-
+          MASK_RULES=ip,uuid 配合 PARAMETRIZE_NUMERIC=false 是可用的组合，
+          但不是默认档：默认的数值参数化已经覆盖 IP/UUID/百分比，
+          额外规则只会让模板更早失去区分度（见 services/logcluster/README.md）
+    contract:
+      fixtures: services/logcluster/tests/fixtures
+      baseline: services/logcluster/tests/fixtures/baseline.json
+      # 聚类是确定性的，所以基线逐行精确比对，不需要相似度阈值
+      exact: true
+      # 基线里还有 drain3 版本与延迟预算两重校验
+      drain3_version_checked: true

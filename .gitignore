@@ -3,6 +3,8 @@ services/*/target/
 **/.venv/
 __pycache__/
 *.pyc
+services/*/.state/
+services/*/.pytest_cache/
 .DS_Store
 .idea/
 .vscode/

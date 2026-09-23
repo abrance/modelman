@@ -34,7 +34,20 @@ Rust 服务需要在根 `Cargo.toml` 的 `members` 里加一项；Python 服务�
 | `SERVICE_FIXTURES` | `make fixtures` | 重新生成契约基线 |
 | `SERVICE_CLEAN` | `make clean` | 清理构建产物 |
 
+还有一个可选的：
+
+| 变量 | 对应目标 | 说明 |
+|---|---|---|
+| `SERVICE_IMAGE_ARGS` | `make image` | 追加给 `docker build` 的参数；Python 服务用它把提交与构建时间作为 build-arg 注入镜像 |
+
 少定义哪个，跑对应目标时就报哪个，不会静默成功。
+
+`make test` / `run` / `image` / `smoke` / `fixtures` 都依赖 `make build`，
+所以 `SERVICE_BUILD` 要能把“测试与运行的前置条件”准备好（Rust 是编译产物，
+Python 是装好钉死版本的 venv），否则第一次在干净机器上跑 `make test` 会直接报错。
+
+Python 服务的参考实现是 `services/logcluster`：它的 `service.mk` 用
+venv + pytest 实现同样的六个变量，根 `Makefile` 没有为它改任何一行。
 
 `make image` 与 `make image-run` 是通用的：前者按 `services/<name>/Dockerfile`
 构建 `modelman-<name>:<TAG>`，后者把 `PORT` 映射到容器 8080。

@@ -1,0 +1,9 @@
+# 合成样本：错误日志与堆栈行（制表符缩进需保留）。
+2026-09-23T10:06:01Z ERROR request failed status=502 upstream=payments-svc
+2026-09-23T10:06:02Z ERROR request failed status=504 upstream=payments-svc
+	at com.example.PaymentClient.call(PaymentClient.java:88)
+	at com.example.PaymentClient.call(PaymentClient.java:91)
+	at com.example.OrderService.process(OrderService.java:142)
+	at com.example.OrderService.process(OrderService.java:155)
+Caused by: java.net.SocketTimeoutException: Read timed out
+Caused by: java.net.ConnectException: Connection refused
