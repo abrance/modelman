@@ -41,6 +41,10 @@ fi
 curl -fsS "http://127.0.0.1:${port}/healthz"
 echo
 
+# 反代与探活器会直接探根路径，404 会被判成不健康
+curl -fsS "http://127.0.0.1:${port}/"
+echo
+
 # /version 里的 git_commit 应与镜像 tag 的后缀一致
 curl -fsS "http://127.0.0.1:${port}/version"
 echo

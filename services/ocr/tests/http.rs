@@ -78,7 +78,8 @@ async fn json_of(response: axum::response::Response) -> serde_json::Value {
 async fn health_endpoints_are_reachable_without_auth() {
     let app = app(Some("shared-secret")).await;
 
-    for path in ["/health", "/healthz", "/livez"] {
+    // 根路径必须也在内：反代与外部探活器常直接探 `/`，404 会被判成不健康。
+    for path in ["/", "/health", "/healthz", "/livez"] {
         let response = app
             .clone()
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
