@@ -159,7 +159,7 @@
   这是"无后端会话的纯静态页"的固有代价，靠"不引第三方脚本 + 严格 CSP"压低，
   文档里写明。**HTTPS 是前提**：HTTP 下 token 明文过网。
 - **本次的决定是不启用鉴权**（`design.md` D15）：页面与 API 就那样对公网开着，
-  任何能访问入口的人都能调 `/ocr`。上界（`MAX_CONCURRENCY=2`、`LIMIT_CONCURRENCY=8`、
+  任何能访问入口的人都能调 `/ocr`。上界（`MAX_CONCURRENCY=2`、`QUEUE_TIMEOUT_SECS=30`、
   compose 的 `cpus=2/memory=1500M`）保证被滥用时对方拿到 503，而不是把共享主机拖垮。
 - 要收敛时：`AUTH_TOKEN` 一开，页面会在 `localStorage` 存一份并在每次请求带上，
   401 时自动展开输入框——**不需要改代码，也不需要重新设计**。
