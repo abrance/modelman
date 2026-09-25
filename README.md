@@ -41,6 +41,7 @@ modelman/
     ├── architecture.md         # 服务约定与目录职责
     ├── adding-a-service.md     # 新增服务的检查单
     ├── ocr-model-selection.md  # 档位实测对比
+    ├── ocr-ui.md               # OCR 网页界面：设计、交互与部署前置
     └── deployment.md           # 镜像、镜像源与部署链路
 ```
 
