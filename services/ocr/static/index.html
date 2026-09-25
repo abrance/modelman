@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>OCR 文字识别</title>
+<link rel="stylesheet" href="/ui/app.css">
+<script defer src="/ui/app.js"></script>
+</head>
+<body>
+
+<header class="page-head">
+    <h1>OCR 文字识别</h1>
+    <p class="hint">点选、拖入或粘贴图片；手机上可以直接拍照。</p>
+</header>
+
+<main class="layout">
+    <section class="panel" aria-labelledby="head-input">
+        <h2 id="head-input">输入</h2>
+
+        <div id="dropzone" class="dropzone" tabindex="0" role="button"
+             aria-label="选择或拖入图片">
+            <span class="dropzone-icon" aria-hidden="true">＋</span>
+            <span>把图片拖到这里</span>
+            <span class="hint">或点击选择文件</span>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple hidden>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+
+        <div class="row">
+            <button type="button" id="camera-btn" class="btn">拍照</button>
+            <button type="button" id="clear-btn" class="btn ghost">清空结果</button>
+        </div>
+
+        <label class="field" for="model-select">
+            <span>档位</span>
+            <select id="model-select"></select>
+        </label>
+        <p class="hint" id="model-hint"></p>
+
+        <details class="field" id="token-details">
+            <summary>访问 token</summary>
+            <input type="password" id="token-input" placeholder="AUTH_TOKEN"
+                   autocomplete="off" spellcheck="false">
+            <p class="hint" id="token-hint">服务未启用鉴权时留空即可。</p>
+        </details>
+
+        <p class="status" id="progress" hidden></p>
+        <p class="banner" id="banner" hidden></p>
+    </section>
+
+    <section class="panel" aria-labelledby="head-results">
+        <div class="panel-head">
+            <h2 id="head-results">结果</h2>
+            <div class="row">
+                <button type="button" id="copy-all" class="btn small">全部复制</button>
+                <button type="button" id="export-txt" class="btn small ghost">导出 .txt</button>
+            </div>
+        </div>
+
+        <p class="empty" id="empty-hint">还没有结果。</p>
+        <div id="cards" class="cards"></div>
+    </section>
+</main>
+
+<section class="panel history" aria-labelledby="head-history">
+    <div class="panel-head">
+        <h2 id="head-history">历史记录</h2>
+        <div class="row">
+            <button type="button" id="export-history" class="btn small ghost">导出全部</button>
+            <button type="button" id="clear-history" class="btn small ghost">清空</button>
+        </div>
+    </div>
+    <p class="hint">只保存文字，不保存图片 —— 所以历史条目无法还原位置框。</p>
+    <p class="empty" id="history-empty">还没有历史记录。</p>
+    <ul id="history-list" class="history-list"></ul>
+</section>
+
+<footer class="page-foot">
+    <a href="/version">服务信息</a>
+    <span aria-hidden="true">·</span>
+    <a href="/models">档位清单</a>
+</footer>
+
+<template id="card-template">
+    <article class="card">
+        <div class="card-head">
+            <span class="card-name" data-role="name"></span>
+            <span class="card-meta" data-role="meta"></span>
+        </div>
+        <div class="card-body">
+            <div class="preview">
+                <img data-role="image" alt="">
+                <div class="boxes" data-role="boxes"></div>
+            </div>
+            <div class="text" data-role="text"></div>
+        </div>
+        <p class="banner" data-role="error" hidden></p>
+        <div class="row">
+            <button type="button" class="btn small" data-role="copy">复制</button>
+            <button type="button" class="btn small ghost" data-role="retry" hidden>重试</button>
+        </div>
+    </article>
+</template>
+
+<template id="history-item-template">
+    <li class="history-item">
+        <div class="history-head">
+            <span class="history-meta" data-role="meta"></span>
+            <span class="row">
+                <button type="button" class="btn small ghost" data-role="copy">复制</button>
+                <button type="button" class="btn small ghost" data-role="remove">删除</button>
+            </span>
+        </div>
+        <p class="history-text" data-role="text"></p>
+    </li>
+</template>
+
+</body>
+</html>

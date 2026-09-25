@@ -16,6 +16,7 @@
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
 | 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.0-cae8500` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
+| OCR 自带 Web 界面 | 已实现（待发版） | `GET /ui`：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。设计见 `docs/ocr-ui.md` |
 
 实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
 云主机端到端 28–54 ms；镜像 133 MB（压缩）/ 214 MB（落盘）。
@@ -24,17 +25,24 @@
 
 按依赖顺序排列，前一项是后一项的前提或输入。
 
-### 一、对外开放前补鉴权（阻塞项）
+### 一、对外开放的鉴权口径
 
 两个服务都已实现 `AUTH_TOKEN`，但都未启用，且都只绑 `127.0.0.1`（`model-ocr` 9101、
-`model-logcluster` 9103）。一旦上层反向代理把入口暴露到公网，必须先完成三处改动：`cops` 的 `deploy.yml`
+`model-logcluster` 9103）。
+
+**当前口径：直接开，不启用鉴权**（`docs/design.md` D15）。也就是任何能访问入口的人
+都能调接口；影响面由并发上界与 compose 限额卡住（滥用表现为 503，不是主机过载）。
+
+要收敛时，每个服务只需三处改动，**不需要改服务代码**：`cops` 的 `deploy.yml`
 密钥分发映射、`app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV`、主机上的
-`/opt/cops/secrets/<服务>.env`。
+`/opt/cops/secrets/<服务>.env`。两侧的 token 逻辑都已实现并有测试覆盖；
+OCR 页面会自己保存并带上 token。
 
-**对日志聚类尤其要先行**：它的 `/cluster` 是往模板树里写数据的接口，入口开放意味着
-任何人都能污染模板，而不只是白烧 CPU。
+**日志聚类值得单独掂量**：它的 `/cluster` 是往模板树里写数据的接口，入口开放意味着
+任何人都能污染模板（不只是白烧 CPU），而模板污染不会自动恢复。
 
-**这是当前唯一的硬性阻塞项**：在没有 token 的情况下暴露公网，等于把 CPU 密集型接口免费对外开放。
+OCR 页面（`/ui`）与 API 同端口，开放页面等于开放 9101；挂入口时仍需确认的两件与
+鉴权无关的事（HTTPS、入口落在域名根路径）写在 `docs/deployment.md`。
 
 ### 二、资源规划决策（决定后续所有工作量）
 

@@ -428,6 +428,111 @@ async fn metrics_reflect_completed_requests() {
     assert!(text.contains("ocr_low_confidence_lines_total"));
 }
 
+// ── 自带 Web 界面 ───────────────────────────────────────────────────────────
+//
+// 界面是服务的一部分（编译期嵌入），所以路由与响应头在这里断言；
+// 页面内部的交互由 docs/ocr-ui.md 的手动验收清单覆盖。
+
+async fn fetch_text(app: axum::Router, path: &str) -> (StatusCode, String, axum::http::HeaderMap) {
+    let response = app
+        .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("cannot read response body");
+    (
+        status,
+        String::from_utf8_lossy(&bytes).into_owned(),
+        headers,
+    )
+}
+
+fn header<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> &'a str {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ui_assets_are_served_with_hardened_headers() {
+    let app = app(None).await;
+
+    for (path, expected_type) in [
+        ("/ui", "text/html"),
+        ("/ui/app.css", "text/css"),
+        ("/ui/app.js", "application/javascript"),
+    ] {
+        let (status, body, headers) = fetch_text(app.clone(), path).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert!(!body.is_empty(), "{path} 是空的");
+
+        let content_type = header(&headers, "content-type");
+        assert!(
+            content_type.starts_with(expected_type),
+            "{path}: {content_type}"
+        );
+        assert!(content_type.contains("utf-8"), "{path}: {content_type}");
+
+        // 换镜像后手机上刷到旧页面比多几个字节的请求麻烦得多
+        assert_eq!(header(&headers, "cache-control"), "no-cache", "{path}");
+
+        let csp = header(&headers, "content-security-policy");
+        assert!(csp.contains("default-src 'none'"), "{path}: {csp}");
+        assert!(csp.contains("script-src 'self'"), "{path}: {csp}");
+        assert!(csp.contains("connect-src 'self'"), "{path}: {csp}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ui_page_points_at_the_real_endpoints() {
+    let app = app(None).await;
+
+    let (_, html, _) = fetch_text(app.clone(), "/ui").await;
+    assert!(html.contains("<title>"), "缺 <title>");
+    assert!(html.contains("/ui/app.js"), "缺脚本引用");
+    assert!(html.contains("/ui/app.css"), "缺样式引用");
+
+    let (_, js, _) = fetch_text(app, "/ui/app.js").await;
+    // 页面必须调真正的识别端点，并且带 token 的写法没写错
+    assert!(js.contains("/ocr?"), "页面没调用 /ocr");
+    assert!(js.contains("X-Auth-Token"), "页面没带 token 头");
+    // 识别文本靠 textContent 渲染；把图片里的内容当 HTML 写进 DOM 等于执行不可信输入。
+    // 这里只断言真的没用（赋值与方法调用），注释里提到这个词不算。
+    assert!(!js.contains(".innerHTML"), "页面里用了 innerHTML 赋值");
+    assert!(
+        !js.contains("insertAdjacentHTML") && !js.contains("outerHTML"),
+        "页面里用了 HTML 注入的写法"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ui_is_open_while_ocr_stays_guarded() {
+    let app = app(Some("shared-secret")).await;
+
+    // 页面与静态资源免鉴权：否则手机拿不到页面，也就无从填 token
+    for path in ["/ui", "/ui/app.css", "/ui/app.js"] {
+        let (status, _, _) = fetch_text(app.clone(), path).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+    }
+
+    // 但识别端点仍然要 token —— 两者不能一起放开
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/ocr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 #[test]
 fn backend_parsing_rejects_unknown_values() {
     assert!(Backend::parse("cpu").is_ok());

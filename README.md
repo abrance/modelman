@@ -41,6 +41,7 @@ modelman/
     ├── architecture.md         # 服务约定与目录职责
     ├── adding-a-service.md     # 新增服务的检查单
     ├── ocr-model-selection.md  # 档位实测对比
+    ├── ocr-ui.md               # OCR 网页界面：设计、交互与部署前置
     └── deployment.md           # 镜像、镜像源与部署链路
 ```
 
@@ -87,6 +88,8 @@ GPU 镜像的手工部署方式。
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
 | GET | `/` | 否 | 根路径存活探针，等价 `/livez`；反代与外部监控探根路径用 |
+| GET | `/ui` | 否 | 自带 Web 界面：传图看字，手机可直接拍照 |
+| GET | `/ui/app.css`、`/ui/app.js` | 否 | 界面的样式与脚本（随镜像交付，编译期嵌入） |
 | GET | `/health`, `/healthz` | 否 | 存活状态，含已加载模型与运行时长 |
 | GET | `/livez` | 否 | 进程存活 |
 | GET | `/readyz` | 否 | 默认档位已常驻，可以接流量 |
@@ -116,6 +119,9 @@ GPU 镜像的手工部署方式。
 默认不启用鉴权。设置 `AUTH_TOKEN` 后，`/ocr`、`/ocr/batch`、`/metrics` 需要带
 `X-Auth-Token: <token>` 或 `Authorization: Bearer <token>`；
 健康检查类端点刻意保持开放，以便容器在拿到凭据之前就能被探活。
+
+`/ui` 是服务自带的页面（点选 / 拖入 / 粘贴 / 手机拍照 → 文字），
+设计与部署前置见 [`docs/ocr-ui.md`](docs/ocr-ui.md)。
 
 ### 模型档位
 

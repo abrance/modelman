@@ -1,0 +1,380 @@
+/* OCR 页面的样式。
+ *
+ * 手机优先：默认单列、触控目标够大、留出刘海与手势条的空间；
+ * 宽屏（>= 640px）把输入与结果并排。
+ *
+ * 不引任何外部字体与资源（运行环境不保证外网可达），只用系统字体栈。
+ * 颜色走 CSS 变量，跟着系统的深浅色走。
+ */
+
+:root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --fg: #16181d;
+    --muted: #6b7280;
+    --line: #e3e5ea;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --danger: #b42318;
+    --danger-bg: #fef3f2;
+    --ok: #067647;
+    --radius: 10px;
+    --pad: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #16181d;
+        --panel: #1e2128;
+        --fg: #e8eaef;
+        --muted: #9aa1ad;
+        --line: #2d323c;
+        --accent: #5b8def;
+        --accent-fg: #0b0d11;
+        --danger: #ff9b91;
+        --danger-bg: #33191a;
+        --ok: #6bd39a;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: var(--pad);
+    padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+
+h1 {
+    font-size: 18px;
+    margin: 0 0 4px;
+}
+
+h2 {
+    font-size: 15px;
+    margin: 0;
+}
+
+.page-head {
+    margin: 0 auto 12px;
+    max-width: 1100px;
+}
+
+.page-foot {
+    max-width: 1100px;
+    margin: 16px auto 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.page-foot a {
+    color: inherit;
+}
+
+.hint {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 4px 0;
+}
+
+.layout {
+    display: grid;
+    gap: var(--pad);
+    max-width: 1100px;
+    margin: 0 auto;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+    .layout {
+        grid-template-columns: minmax(280px, 360px) 1fr;
+        align-items: start;
+    }
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: var(--pad);
+}
+
+.panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.history {
+    max-width: 1100px;
+    margin: var(--pad) auto 0;
+}
+
+/* ── 控件 ───────────────────────────────────────────────────────────── */
+
+.btn {
+    font: inherit;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    cursor: pointer;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.btn.ghost {
+    background: transparent;
+    color: var(--fg);
+    border-color: var(--line);
+}
+
+.btn.small {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.field {
+    display: block;
+    margin-top: 12px;
+}
+
+.field > span,
+.field > summary {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+select,
+input[type="password"] {
+    font: inherit;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 10px;
+    color: var(--fg);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+input[type="password"].invalid {
+    border-color: var(--danger);
+}
+
+.dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 130px;
+    padding: var(--pad);
+    text-align: center;
+    color: var(--muted);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+.dropzone.dragover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.dropzone-icon {
+    font-size: 24px;
+    line-height: 1;
+}
+
+/* ── 提示与状态 ─────────────────────────────────────────────────────── */
+
+.banner {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 13px;
+    white-space: pre-line;
+}
+
+.banner.ok {
+    background: transparent;
+    color: var(--ok);
+}
+
+.status {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.empty {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* ── 结果卡片 ───────────────────────────────────────────────────────── */
+
+.cards {
+    display: grid;
+    gap: var(--pad);
+}
+
+.card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px;
+}
+
+.card-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.card-name {
+    font-size: 13px;
+    word-break: break-all;
+}
+
+.card-meta {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.card-body {
+    display: grid;
+    gap: 10px;
+}
+
+@media (min-width: 900px) {
+    .card-body {
+        grid-template-columns: minmax(200px, 40%) 1fr;
+        align-items: start;
+    }
+}
+
+.preview {
+    position: relative;
+    line-height: 0;
+}
+
+.preview img {
+    width: 100%;
+    height: auto;
+    border-radius: 6px;
+    background: var(--bg);
+}
+
+/* 位置框用百分比定位：缩放窗口不用重算，见 docs/ocr-ui.md */
+.boxes {
+    position: absolute;
+    inset: 0;
+}
+
+.box {
+    position: absolute;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    color: rgb(37 99 235 / 70%);
+    cursor: pointer;
+}
+
+.box.active {
+    border-width: 2px;
+    color: #f97316;
+    background: rgb(249 115 22 / 18%);
+}
+
+.text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    max-height: 320px;
+    overflow: auto;
+}
+
+.line {
+    padding: 2px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.line.active {
+    background: rgb(249 115 22 / 18%);
+}
+
+.line-conf {
+    color: var(--muted);
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+/* ── 历史 ───────────────────────────────────────────────────────────── */
+
+.history-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.history-item {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.history-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.history-meta {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.history-text {
+    margin: 6px 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 4.5em;
+    overflow: hidden;
+}
