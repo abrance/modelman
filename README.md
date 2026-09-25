@@ -29,9 +29,9 @@ modelman/
 │   │   ├── smoke.sh            # 容器冒烟检查，CI 与发布共用
 │   │   └── Dockerfile
 │   └── logcluster/             # Drain3 日志聚类服务（Python，不入 cargo workspace）
-│       ├── src/
+│       ├── src/                # 服务代码；src/static/ 是自带页面（随镜像交付）
 │       ├── tests/fixtures/     # 合成样本 + 契约基线
-│       ├── tools/              # 契约基线生成器
+│       ├── tools/              # 契约基线生成器、页面验收脚本
 │       ├── service.mk
 │       ├── smoke.sh
 │       └── Dockerfile
@@ -149,7 +149,12 @@ Drain3 在线模板挖掘。把一批日志行喂进来，得到每行所属的�
 
 接口沿用仓库约定（`/livez` `/healthz` `/readyz` `/version` `/models` `/metrics`），
 业务端点是 `POST /cluster`（学习）、`POST /match`（只读匹配）、`GET /clusters`。
-鉴权现状同 OCR：默认不启用，只绑回环，对外暴露前必须先加 `AUTH_TOKEN`。
+根路径 `/` 也是自带页面：贴日志看模板，见
+[`docs/logcluster-ui.md`](docs/logcluster-ui.md)。
+
+鉴权现状同 OCR（`design.md` D16、D17）：默认不启用 `AUTH_TOKEN`，只绑回环，
+入口挂上即可用。**代价比 OCR 重** —— 页面上那个「聚类」按钮写的是模板树，
+谁都能按，而模板污染不自愈；要收敛时启用 `AUTH_TOKEN`，页面不用改。
 
 ## 许可
 

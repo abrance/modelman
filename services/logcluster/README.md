@@ -26,6 +26,8 @@
 
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
+| GET | `/` | 否 | 自带 Web 界面：贴日志看模板（页面在根路径，开域名即用） |
+| GET | `/app.css`、`/app.js` | 否 | 界面的样式与脚本（随镜像交付，启动时读进内存） |
 | GET | `/livez` | 否 | 进程存活 |
 | GET | `/healthz`、`/health` | 否 | 存活 + 已加载档位 + 模板数与累计行数 |
 | GET | `/readyz` | 否 | 状态可用；否则 503 |
@@ -141,6 +143,40 @@
 一个已知代价：模板频繁变化时每次变化都会压缩 + `fsync` 一次整个状态文件，
 所以"新模板很多"的突发流量比"命中已有模板"的流量贵得多。
 `SNAPSHOT_INTERVAL_MINUTES` 只影响模板不变时的周期落盘，不影响这个路径。
+
+## Web 界面
+
+打开 `/` 就是一个可以贴日志看模板的页面：贴文本或拖入日志文件 →「聚类」看每行归到
+哪个模板、哪些行改动了模板树 →「只匹配」只看命中 → 下面/右侧是累积的模板树。
+设计依据与交互约定见 `docs/logcluster-ui.md`。
+
+与 OCR 页面最重要的差别：**这个页面上有一个会写服务端状态的按钮。**
+
+| 按钮 | 接口 | 会不会改模板树 |
+|---|---|---|
+| 聚类 | `POST /cluster` | **会**：新建模板、改写既有模板 |
+| 只匹配 | `POST /match` | 不会 |
+| 刷新模板 | `GET /clusters` | 不会 |
+
+鉴权现状与 OCR 一致（`docs/design.md` D16、D17）：默认不启用 `AUTH_TOKEN`，
+所以入口一挂上，能访问到的人就能贴日志改你的模板树。要收敛时启用 `AUTH_TOKEN` 即可，
+**页面不用改**（`/version` 报 `auth_required` 为真时会自己提示填 token）。
+
+页面不硬编码任何服务端参数：档位与阈值读 `/version`，模板数与覆盖行数读 `/healthz`
+（它免鉴权，所以启用 token 后状态条仍然可用），模板表读 `/clusters`。输入上限按
+`/version` 报的 `MAX_LINES` / `MAX_LINE_CHARS` / `MAX_BYTES` 在浏览器里先算一遍，
+超了直接禁用按钮；服务端那三道仍是最终闸门（400 / 413）。
+
+真浏览器验收（可选，需要另装 playwright）：
+
+```bash
+python3 -m pip install playwright && python3 -m playwright install chromium
+make run SERVICE=logcluster &          # 或另起几个不同配置的实例
+python3 services/logcluster/tools/ui_acceptance.py --base http://127.0.0.1:8080
+```
+
+`--scenario limits` / `--scenario auth` 分别验超限与鉴权路径，见脚本头部注释。
+注意「聚类」是真的往模板树里写数据，别拿它去打正在用的实例。
 
 ## 本地开发
 
