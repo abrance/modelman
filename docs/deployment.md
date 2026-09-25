@@ -90,22 +90,37 @@ apps/model-ocr/
 ## 把 OCR 页面（`/ui`）对公网或手机开放
 
 服务自带一个页面：`GET /ui`，点选/拖入/粘贴/手机拍照 → 文字。设计与交互见
-`docs/ocr-ui.md`。它和 API 在同一个端口上，所以开放它就是把 9101 暴露出去，
-必须按下面的顺序做 —— **顺序不能反**：
+`docs/ocr-ui.md`。它和 API 在同一个端口上，所以开放它就是把 9101 暴露出去。
 
-1. **先开 `AUTH_TOKEN`**（上面「暴露方式」的三步）。反过来做的后果是：在你挂上入口
-   到开好 token 之间的那段时间里，`/ocr` 是任何人都能调的 CPU 密集接口。
-2. **确认入口用 HTTPS。** 两个原因：HTTP 下 token 明文过网；非安全上下文里浏览器
-   不给用 `navigator.clipboard`，「一键复制」会直接失效。
-3. **入口必须落在域名根路径。** 页面用绝对路径调 `/ocr`，所以 traefik 要把
+**当前的决定是：不带鉴权就开**（`docs/design.md` D15）。也就是任何能访问入口的人
+都能调 `/ocr`；上界（`MAX_CONCURRENCY=2`、`LIMIT_CONCURRENCY=8`、compose 的
+`cpus=2/memory=1500M`）保证被滥用时表现为 503，而不是把共享主机拖垮。
+
+挂入口时只需确认三件与鉴权无关的事：
+
+1. **用 HTTPS。** HTTP 下浏览器不给非安全上下文用 `navigator.clipboard`，
+   「一键复制」会直接失效；将来若开鉴权，凭据也会明文过网。
+2. **入口必须落在域名根路径。** 页面用绝对路径调 `/ocr`，所以 traefik 要把
    `https://<域名>/` 转发到 `127.0.0.1:9101`；挂在子路径（如 `https://host/model-ocr/`）
    下页面能打开但无法识别。
-4. 手机上访问 `https://<域名>/ui`，首次使用在页面里的「访问 token」处填一次，
-   浏览器会记住。
+3. 手机上访问 `https://<域名>/ui` 即可用。
+
+### 以后要收敛成带鉴权
+
+按那个顺序做（**顺序不能反**，反过来会让中间那段时间没有保护）：
+
+1. `cops` 的 `deploy.yml` 密钥分发映射里加一行 `MODEL_OCR_AUTH_TOKEN`；
+2. `apps/model-ocr/app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV` 声明 `AUTH_TOKEN`；
+3. token 写入云主机 `/opt/cops/secrets/model-ocr.env`（权限 600）。
+
+重新部署后 `/ocr`、`/ocr/batch`、`/metrics` 需要带 `X-Auth-Token` 或
+`Authorization: Bearer`；`/ui`、`/healthz`、`/readyz`、`/version`、`/models` 仍然免鉴权
+（页面得先能打开，才谈得上填 token）。页面会在 `localStorage` 里存一份并自动带上，
+401 时展开输入框——**不需要改代码**。
 
 反代与 TLS 证书在云主机上由 dockpanel/traefik 管，不在本仓库也不在 `cops` 仓库范围内，
-这里只给清单。验收时确认三件事：未带 token 的 `curl https://<域名>/ocr` 返回 401、
-页面里能识别出一张图、浏览器地址栏是 HTTPS。
+这里只给清单。验收时确认三件事：页面里能识别出一张图、浏览器地址栏是 HTTPS、
+（若已开鉴权）未带 token 的 `curl https://<域名>/ocr` 返回 401。
 
 ## 资源上限
 

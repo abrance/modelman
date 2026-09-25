@@ -74,9 +74,13 @@ POST /ocr/batch    同一表单内多个 image 字段，逐个返回结果
 设置了 `AUTH_TOKEN` 时，页面会在 `localStorage` 里存一份并在每次请求里带上；
 token 无效或缺失时相应输入框会自动展开并标红。
 
-想从公网/手机访问，前置条件写在 `docs/deployment.md`：**先开 `AUTH_TOKEN`，
-再挂 traefik 入口，且必须 HTTPS**（HTTP 下 token 明文过网，浏览器也不给非安全
-上下文用剪贴板，一键复制会失效）。
+想从公网/手机访问，步骤写在 `docs/deployment.md`。两个要点：
+
+- **HTTPS 是必须的**：HTTP 下 `navigator.clipboard` 不可用，「一键复制」会失效。
+- **鉴权目前不开**（`docs/design.md` D15）：入口挂上就是公开的，任何能访问的人
+  都能调 `/ocr`。影响面被 `MAX_CONCURRENCY`、`LIMIT_CONCURRENCY` 与 compose 限额卡住，
+  表现为对方拿到 503 而不是主机过载。以后要收敛只需在 `cops` 开 `AUTH_TOKEN`，
+  页面会自动保存并带上，**不用改代码**。
 
 ## 环境变量
 
