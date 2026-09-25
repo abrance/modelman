@@ -15,8 +15,8 @@
 | 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → SSH compose → 健康门禁 |
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
-| 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.0-cae8500` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
-| 日志聚类自带 Web 界面 | 已实现（待发版） | `GET /`：贴日志 → 看模板与本次变更，含只匹配、模板树面板、写入提示；三份静态资源随镜像交付，不启动新容器。设计见 `docs/logcluster-ui.md` |
+| 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.1-4c4f4e1` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
+| 日志聚类自带 Web 界面 | 已上线 | `GET /`：贴日志 → 看模板与本次变更，含只匹配、模板树面板、写入提示；三份静态资源随镜像交付，不启动新容器。设计见 `docs/logcluster-ui.md` |
 | OCR 自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。镜像 `v0.1.3-6476ffb` 已部署到 `127.0.0.1:9101`，入口按域名根路径转发；真浏览器验收 19/19 是打线上入口跑的。设计见 `docs/ocr-ui.md` |
 
 实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
@@ -83,7 +83,7 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 - **有状态**：模板树落在 `STATE_DIR` 的卷里，默认单副本，横向扩容前必须先把状态外置。
   状态带 schema 与聚类参数校验，不兼容时降级为 `/readyz` 503、业务端点 503，
   并且不覆盖旧状态文件（见 `services/logcluster/README.md`）。
-- 上线状态：tag `logcluster/v0.1.0`（提交 `cae8500`）→ 镜像 `v0.1.0-cae8500`
+- 上线状态：tag `logcluster/v0.1.1`（提交 `4c4f4e1`）→ 镜像 `v0.1.1-4c4f4e1`
   → `cops` 单元 `apps/model-logcluster`，容器 healthy，`/readyz` 首次探测即通过。
   重复部署不会重建容器（全量部署时日志显示 `Up 28 minutes` 而状态卷仍在）。
 - 实测：镜像 158 MB，常驻 40 MiB（11 个模板 / 24 行），24 行聚类 66 ms。
