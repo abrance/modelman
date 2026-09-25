@@ -56,6 +56,15 @@ assert models, models
 print("smoke models:", ", ".join(item["id"] for item in models))
 '
 
+# 自带 Web 界面随镜像交付（页面在编译期嵌进二进制），确认真的带上去了、
+# 且内容类型与安全头都对
+curl -fsS -D /tmp/ocr-ui-headers "http://127.0.0.1:${port}/ui" | grep -q '<title>'
+curl -fsS "http://127.0.0.1:${port}/ui/app.css" | grep -q '\-\-accent'
+curl -fsS "http://127.0.0.1:${port}/ui/app.js" | grep -q 'X-Auth-Token'
+grep -qi 'content-type: text/html' /tmp/ocr-ui-headers
+grep -qi "content-security-policy: default-src 'none'" /tmp/ocr-ui-headers
+echo "smoke ui: 页面与静态资源就绪"
+
 curl -fsS -F "image=@${here}/tests/fixtures/case_05.png" \
     "http://127.0.0.1:${port}/ocr" | python3 -c '
 import json, sys

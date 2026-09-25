@@ -665,7 +665,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/livez", get(livez))
         .route("/readyz", get(readyz))
         .route("/version", get(version))
-        .route("/models", get(models));
+        .route("/models", get(models))
+        // 自带 Web 界面。免鉴权是刻意的：页面得先能打开，才谈得上填 token。
+        // 三份资源在编译期嵌进二进制，见 docs/ocr-ui.md。
+        .route("/ui", get(crate::ui::index))
+        .route("/ui/app.css", get(crate::ui::css))
+        .route("/ui/app.js", get(crate::ui::js));
 
     open.merge(guarded)
         .layer(DefaultBodyLimit::max(body_limit))
