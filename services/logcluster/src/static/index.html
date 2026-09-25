@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>日志模板聚类</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>日志模板聚类</h1>
+  <div class="status" aria-live="polite">
+    <span id="stat-state" class="chip">连接中…</span>
+    <span id="stat-counts" class="muted">模板 — · 覆盖 — 行</span>
+    <span id="stat-params" class="muted"></span>
+  </div>
+</header>
+
+<main class="grid">
+
+  <section class="panel" aria-labelledby="input-title">
+    <h2 id="input-title">日志</h2>
+
+    <div id="drop" class="drop" tabindex="0" role="button"
+         aria-label="拖入日志文件，或点击选择文件">
+      拖入日志文件，或点这里选择
+    </div>
+    <input id="file" type="file" multiple hidden
+           accept=".log,.txt,.json,.out,text/plain,text/*">
+
+    <label class="sr-only" for="lines">日志行</label>
+    <textarea id="lines" spellcheck="false" autocomplete="off"
+              placeholder="每行一条日志，也可以直接粘贴：&#10;user alice logged in from 10.0.0.1&#10;disk usage 95% on /dev/sda1&#10;user bob logged in from 10.0.0.2"></textarea>
+
+    <p id="budget" class="muted small">0 行 · 0 B</p>
+    <p id="notice" class="notice" role="status"></p>
+
+    <div class="actions">
+      <button id="cluster" class="primary">聚类<span class="sub">写入模板树</span></button>
+      <button id="match">只匹配<span class="sub">不写入</span></button>
+      <button id="clear" class="ghost">清空</button>
+    </div>
+
+    <details id="token-box" class="token">
+      <summary>接口 token</summary>
+      <label class="sr-only" for="token-input">接口 token</label>
+      <input id="token-input" type="password" autocomplete="off" placeholder="X-Auth-Token">
+      <p class="muted small">服务启用 <code>AUTH_TOKEN</code> 时才需要。只存在本机浏览器里，只发给这个域名。</p>
+    </details>
+  </section>
+
+  <section class="panel" aria-labelledby="result-title">
+    <h2 id="result-title">结果</h2>
+    <p id="summary" class="summary muted">还没有结果。贴几行日志，点「聚类」或「只匹配」。</p>
+    <ol id="results" class="results"></ol>
+  </section>
+
+  <section class="panel wide" aria-labelledby="templates-title">
+    <h2 id="templates-title">
+      模板树
+      <button id="refresh" class="ghost small">刷新</button>
+    </h2>
+    <p id="template-summary" class="muted small">—</p>
+    <ol id="templates" class="templates"></ol>
+  </section>
+
+</main>
+
+<footer class="foot muted small">
+  模板树由服务端累积，这里的每一次「聚类」都会写进去；
+  「只匹配」只读。参数与上限读自 <code>/version</code>。
+</footer>
+
+<script defer src="/app.js"></script>
+</body>
+</html>

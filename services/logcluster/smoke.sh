@@ -37,6 +37,15 @@ fi
 curl -fsS "http://127.0.0.1:${port}/healthz"
 echo
 
+# 自带页面随镜像交付（三份静态文件在启动时读进内存），确认真的带上去了、
+# 且内容类型与安全头都对
+curl -fsS -D /tmp/logcluster-ui-headers "http://127.0.0.1:${port}/" | grep -q '<title>'
+curl -fsS "http://127.0.0.1:${port}/app.css" | grep -q '\-\-accent'
+curl -fsS "http://127.0.0.1:${port}/app.js" | grep -q 'X-Auth-Token'
+grep -qi 'content-type: text/html' /tmp/logcluster-ui-headers
+grep -qi "content-security-policy: default-src 'none'" /tmp/logcluster-ui-headers
+echo "smoke ui: 页面与静态资源就绪"
+
 # /version 里的 git_commit 应与镜像 tag 的后缀一致
 curl -fsS "http://127.0.0.1:${port}/version"
 echo

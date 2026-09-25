@@ -234,3 +234,73 @@ def test_unknown_route_returns_a_json_error(client):
     response = client.get("/nope")
     assert response.status_code == 404
     assert response.json()["error"]
+
+
+# ── 自带页面 ─────────────────────────────────────────────────────────────
+
+
+def test_ui_assets_are_served_with_hardened_headers(client):
+    for path, expected_type in (
+        ("/", "text/html"),
+        ("/app.css", "text/css"),
+        ("/app.js", "application/javascript"),
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.content, f"{path} 是空的"
+
+        content_type = response.headers["content-type"]
+        assert content_type.startswith(expected_type), f"{path}: {content_type}"
+        assert "utf-8" in content_type, f"{path}: {content_type}"
+
+        # 换镜像后浏览器拿到旧页面，比多几个字节的请求麻烦得多
+        assert response.headers["cache-control"] == "no-cache", path
+
+        csp = response.headers["content-security-policy"]
+        assert "default-src 'none'" in csp, f"{path}: {csp}"
+        assert "script-src 'self'" in csp, f"{path}: {csp}"
+        assert "connect-src 'self'" in csp, f"{path}: {csp}"
+
+
+def test_ui_page_points_at_the_real_endpoints(client):
+    html = client.get("/").text
+    assert "<title>" in html, "缺 <title>"
+    assert "/app.js" in html, "缺脚本引用"
+    assert "/app.css" in html, "缺样式引用"
+
+    js = client.get("/app.js").text
+    # 页面必须调真正的三个业务端点。模板与日志原文都是不可信输入，
+    # 渲染一律 textContent：断言真的没用 HTML 注入的写法
+    # （注释里提到这个词不算，所以查的是带点的调用形式）。
+    assert "/cluster" in js, "页面没调用 /cluster"
+    assert "/match" in js, "页面没调用 /match"
+    assert "/clusters" in js, "页面没读取模板树"
+    assert "X-Auth-Token" in js, "页面没带 token 头"
+    assert ".innerHTML" not in js, "页面里用了 innerHTML 赋值"
+    assert "insertAdjacentHTML" not in js and "outerHTML" not in js, (
+        "页面里用了 HTML 注入"
+    )
+
+
+def test_ui_is_open_while_business_endpoints_stay_guarded(tmp_path):
+    client = build_client(build_config(tmp_path, AUTH_TOKEN="shared-secret"))
+
+    # 页面与静态资源免鉴权：否则浏览器拿不到页面，也就无从填 token
+    for path in ("/", "/app.css", "/app.js"):
+        assert client.get(path).status_code == 200, path
+
+    # 但业务端点仍然要 token —— 两者不能一起放开
+    for path in ("/cluster", "/match"):
+        response = client.post(path, json={"lines": LINES})
+        assert response.status_code == 401, path
+        assert response.json()["error"]
+    clusters = client.get("/clusters")
+    assert clusters.status_code == 401
+    assert clusters.json()["error"]
+
+
+def test_ui_root_path_is_not_a_json_endpoint(client):
+    """根路径以前是 404，现在返回页面；状态端点仍然是 JSON。"""
+    assert client.get("/").headers["content-type"].startswith("text/html")
+    assert client.get("/healthz").json()["status"] == "ok"
+    assert client.get("/unknown-path").status_code == 404

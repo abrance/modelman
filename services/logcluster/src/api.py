@@ -21,7 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import build_info
+from . import build_info, ui
 from .config import Config
 from .engine import DrainEngine, Overloaded, StateUnavailable
 from .metrics import Metrics
@@ -280,6 +280,22 @@ def create_app(config: Config, engine: DrainEngine, metrics: Metrics) -> FastAPI
     @app.get("/openapi.json", include_in_schema=False, dependencies=guarded)
     def openapi() -> JSONResponse:
         return JSONResponse(app.openapi())
+
+    # ── 自带页面 ────────────────────────────────────────────────────────
+    # 免鉴权是刻意的：页面得先能打开，才谈得上填 token。三条路由只暴露
+    # 页面结构，不含任何数据。设计见 docs/logcluster-ui.md。
+
+    @app.get("/", include_in_schema=False)
+    def ui_index() -> Response:
+        return ui.asset(ui.INDEX_HTML, "text/html")
+
+    @app.get("/app.css", include_in_schema=False)
+    def ui_css() -> Response:
+        return ui.asset(ui.APP_CSS, "text/css")
+
+    @app.get("/app.js", include_in_schema=False)
+    def ui_js() -> Response:
+        return ui.asset(ui.APP_JS, "application/javascript")
 
     # ── 业务端点 ────────────────────────────────────────────────────────
 
