@@ -27,6 +27,9 @@ PP-OCR 检测 + 识别服务，通过 MNN 在 CPU 上推理。取代了此前手
 
 ```
 GET  /            存活探针，等价 /livez（反代/监控探根路径）
+GET  /ui          自带 Web 界面（免鉴权，页面本身不含数据）
+GET  /ui/app.css  界面样式
+GET  /ui/app.js   界面脚本
 GET  /healthz      liveness + 已加载模型
 GET  /readyz       默认档位是否常驻
 GET  /version      版本 / 提交 / 生效配置
@@ -54,6 +57,26 @@ POST /ocr/batch    同一表单内多个 image 字段，逐个返回结果
 
 `bbox` 与前置实现一致地返回，可用于叠加高亮；`confidence` 低于
 `CONF_THRESHOLD`（默认 0.3）的行会被过滤掉。
+
+## Web 界面
+
+打开 `/ui` 就是一个可以传图看字的页面：点选、拖入、粘贴图片，手机可以直接拍照。
+它会列出 `/models` 里的档位、把 `bbox` 叠在缩略图上、支持逐个复制与导出 `.txt`，
+并在浏览器本地留一份只含文字的历史记录。设计与取舍见 `docs/ocr-ui.md`。
+
+三份静态资源在编译期嵌进二进制（`include_str!`），所以：
+
+- `static/` **不进镜像**，`Dockerfile` 与 `.dockerignore` 都不需要改；
+- 改页面要重新发版（新镜像 tag），不是改文件就能生效；
+- 页面不引任何 CDN 或第三方脚本，运行环境不需要外网。
+
+三条静态路由**免鉴权**：手机得先把页面打开，才谈得上填 token。
+设置了 `AUTH_TOKEN` 时，页面会在 `localStorage` 里存一份并在每次请求里带上；
+token 无效或缺失时相应输入框会自动展开并标红。
+
+想从公网/手机访问，前置条件写在 `docs/deployment.md`：**先开 `AUTH_TOKEN`，
+再挂 traefik 入口，且必须 HTTPS**（HTTP 下 token 明文过网，浏览器也不给非安全
+上下文用剪贴板，一键复制会失效）。
 
 ## 环境变量
 
@@ -97,3 +120,13 @@ make run PORT=8080
 ```
 
 `make test` 里的契约测试是模型变更的唯一门禁，必跑。
+
+页面的验收清单可以跑一遍（可选，需要另装 playwright）：
+
+```bash
+python3 -m pip install playwright && python3 -m playwright install chromium
+make run SERVICE=ocr &                                    # 或另起几个不同配置的实例
+python3 services/ocr/tools/ui_acceptance.py --base http://127.0.0.1:8080
+```
+
+`--scenario auth` / `--scenario too-large` 分别验鉴权与超限路径，见脚本头部注释。

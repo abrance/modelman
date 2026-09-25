@@ -16,6 +16,7 @@
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
 | 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.0-cae8500` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
+| OCR 自带 Web 界面 | 已实现（待发版） | `GET /ui`：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。设计见 `docs/ocr-ui.md` |
 
 实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
 云主机端到端 28–54 ms；镜像 133 MB（压缩）/ 214 MB（落盘）。
@@ -33,6 +34,10 @@
 
 **对日志聚类尤其要先行**：它的 `/cluster` 是往模板树里写数据的接口，入口开放意味着
 任何人都能污染模板，而不只是白烧 CPU。
+
+OCR 的页面（`/ui`）与 API 同端口，开放页面等于开放 9101，同样受这条约束；
+具体顺序与前置条件写到 `docs/deployment.md` 的「把 OCR 页面（`/ui`）对公网或手机开放」
+一节（先开 token、必须 HTTPS、入口落在域名根路径）。
 
 **这是当前唯一的硬性阻塞项**：在没有 token 的情况下暴露公网，等于把 CPU 密集型接口免费对外开放。
 
