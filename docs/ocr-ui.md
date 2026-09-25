@@ -35,7 +35,7 @@
 手机浏览器 ──https──► traefik（云主机，仓库外）
                         │
                         └──► 127.0.0.1:9101  ocr 服务
-                                 GET  /ui, /ui/app.css, /ui/app.js   （免鉴权）
+                                 GET  /, /app.css, /app.js           （免鉴权）
                                  POST /ocr?model=…                   （需 token）
 ```
 
@@ -48,15 +48,22 @@
 
 ## 后端
 
-### 新增三条路由
+### 三条路由
 
 | 方法 | 路径 | 内容 | 鉴权 |
 |---|---|---|---|
-| GET | `/ui` | `index.html`，`text/html; charset=utf-8` | 否 |
-| GET | `/ui/app.css` | 样式，`text/css; charset=utf-8` | 否 |
-| GET | `/ui/app.js` | 脚本，`application/javascript; charset=utf-8` | 否 |
+| GET | `/` | `index.html`，`text/html; charset=utf-8` | 否 |
+| GET | `/app.css` | 样式，`text/css; charset=utf-8` | 否 |
+| GET | `/app.js` | 脚本，`application/javascript; charset=utf-8` | 否 |
 
-**免鉴权是刻意的**：页面必须先能打开，才谈得上填 token。`/ui` 只暴露页面结构，
+**页面为什么在根路径**：最初放在 `/ui`，因为 `/` 当时被「根路径存活探针」占着
+（0.1.1 加的，防止反代或外部监控直接探 `/` 拿到 404 被判成不健康）。但人（和手机）
+唯一会手输的地址就是根路径，而「根路径不 404」这条要求**只关心状态码**，返回 HTML
+一样成立 —— 所以页面移到 `/`，原来的存活响应由 `/livez` 保留。代价是 `/` 不再返回
+`{"status":"ok"}`，若某个探活器断言了根路径的**响应体**就得改成探 `/livez`
+（只看状态码的不受影响）。
+
+**免鉴权是刻意的**：页面必须先能打开，才谈得上填 token。这三条路由只暴露页面结构，
 不含任何敏感数据。
 
 ### 实现要点
@@ -163,8 +170,8 @@
 
 | 层 | 内容 |
 |---|---|
-| Rust HTTP 测试（`tests/http.rs`） | `/ui` 返回 200 且 `content-type` 为 `text/html` 且响应体含 `<title`；`/ui/app.js`、`/ui/app.css` 的 content-type 正确；`/ui` 与静态资源在设置了 `AUTH_TOKEN` 时**仍然免鉴权**，而同场景下 `/ocr` 返回 401；三条路由都带 CSP 与 `no-cache` 头 |
-| 冒烟（`services/ocr/smoke.sh`） | 追加 `curl -fsS …/ui` 断言响应含 `<title`，确认镜像是真的带上了页面 |
+| Rust HTTP 测试（`tests/http.rs`） | `/` 返回 200 且 `content-type` 为 `text/html` 且响应体含 `<title`；`/app.js`、`/app.css` 的 content-type 正确；`/` 与静态资源在设置了 `AUTH_TOKEN` 时**仍然免鉴权**，而同场景下 `/ocr` 返回 401；三条路由都带 CSP 与 `no-cache` 头 |
+| 冒烟（`services/ocr/smoke.sh`） | 追加 `curl -fsS …/` 断言响应含 `<title`，确认镜像是真的带上了页面 |
 | 契约测试 | 不动：`/ocr` 响应结构未变，基线无需重生成 |
 | 手动验收 | 见下 |
 
@@ -196,9 +203,9 @@ Playwright 驱动真实 Chromium 把上面的手动清单跑一遍（默认场�
 
 | 文件 | 改动 |
 |---|---|
-| `services/ocr/README.md` | 新增「Web 界面」一节：地址 `/ui`、token 怎么给、手机上怎么用、位置框为什么只对当前结果有效 |
-| `README.md` | 接口表加 `/ui` 与两条静态资源 |
-| `docs/deployment.md` | 新增「把 OCR 页面（`/ui`）对公网或手机开放」：必须 HTTPS、入口要落在域名根路径、开启鉴权的步骤（本次决定不开，见 D15） |
+| `services/ocr/README.md` | 新增「Web 界面」一节：地址 `/`、token 怎么给、手机上怎么用、位置框为什么只对当前结果有效 |
+| `README.md` | 接口表写清根路径返回页面，并加两条静态资源 |
+| `docs/deployment.md` | 新增「把 OCR 页面（`/`）对公网或手机开放」：必须 HTTPS、入口要落在域名根路径、开启鉴权的步骤（本次决定不开，见 D15） |
 | `docs/roadmap.md` | 已交付表加一行；把「对外开放前补鉴权」那节改成“当前口径：直接开、不启用鉴权（D15）”，并写清楚要收敛时改哪三处 |
 
 ## 风险

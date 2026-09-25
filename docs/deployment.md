@@ -98,9 +98,9 @@ apps/model-ocr/
 需要带 `X-Auth-Token` 或 `Authorization: Bearer`；`/healthz`、`/readyz`、`/version`、
 `/models` 仍然免鉴权，以便容器在拿到凭据之前就能通过健康检查。
 
-## 把 OCR 页面（`/ui`）对公网或手机开放
+## 把 OCR 页面（`/`）对公网或手机开放
 
-服务自带一个页面：`GET /ui`，点选/拖入/粘贴/手机拍照 → 文字。设计与交互见
+服务自带一个页面：`GET /`，点选/拖入/粘贴/手机拍照 → 文字。设计与交互见
 `docs/ocr-ui.md`。它和 API 在同一个端口上，所以开放它就是把 9101 暴露出去。
 
 **当前的决定是：不带鉴权就开**（`docs/design.md` D15）。也就是任何能访问入口的人
@@ -114,7 +114,7 @@ apps/model-ocr/
 2. **入口必须落在域名根路径。** 页面用绝对路径调 `/ocr`，所以 traefik 要把
    `https://<域名>/` 转发到 `127.0.0.1:9101`；挂在子路径（如 `https://host/model-ocr/`）
    下页面能打开但无法识别。
-3. 手机上访问 `https://<域名>/ui` 即可用。
+3. 手机上访问 `https://<域名>/` 即可用（页面就在根路径，没有额外路径要记）。
 
 ### 以后要收敛成带鉴权
 
@@ -125,7 +125,7 @@ apps/model-ocr/
 3. token 写入云主机 `/opt/cops/secrets/model-ocr.env`（权限 600）。
 
 重新部署后 `/ocr`、`/ocr/batch`、`/metrics` 需要带 `X-Auth-Token` 或
-`Authorization: Bearer`；`/ui`、`/healthz`、`/readyz`、`/version`、`/models` 仍然免鉴权
+`Authorization: Bearer`；`/`（页面）、`/healthz`、`/readyz`、`/version`、`/models` 仍然免鉴权
 （页面得先能打开，才谈得上填 token）。页面会在 `localStorage` 里存一份并自动带上，
 401 时展开输入框——**不需要改代码**。
 

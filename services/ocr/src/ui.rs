@@ -5,6 +5,9 @@
 //! 这也是不引入 `ServeDir` 这类依赖的原因：三个文件不值得再加一层中间件。
 //!
 //! 设计依据、交互约定与安全取舍见 `docs/ocr-ui.md`。
+//!
+//! 页面挂在**根路径** `/`：那是人（和手机）唯一会手输的地址，点开域名就该看到它。
+//! 样式与脚本在 `/app.css`、`/app.js`。
 
 use axum::body::Body;
 use axum::http::{header, StatusCode};
@@ -62,7 +65,8 @@ mod tests {
     #[test]
     fn assets_are_embedded_and_look_like_themselves() {
         assert!(INDEX_HTML.contains("<title>"));
-        assert!(INDEX_HTML.contains("/ui/app.js"));
+        assert!(INDEX_HTML.contains("/app.js"));
+        assert!(!INDEX_HTML.contains("/ui/"), "页面还引用着旧的 /ui 前缀");
         assert!(APP_CSS.contains("--accent"));
         assert!(APP_JS.contains("X-Auth-Token"));
     }
