@@ -15,6 +15,7 @@
 | 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → SSH compose → 健康门禁 |
 | 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
+| 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.0-cae8500` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
 
 实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
 云主机端到端 28–54 ms；镜像 133 MB（压缩）/ 214 MB（落盘）。
@@ -25,10 +26,13 @@
 
 ### 一、对外开放前补鉴权（阻塞项）
 
-服务已实现 `AUTH_TOKEN`，但未启用，且当前只绑 `127.0.0.1`。
-一旦上层反向代理把入口暴露到公网，必须先完成三处改动：`cops` 的 `deploy.yml`
+两个服务都已实现 `AUTH_TOKEN`，但都未启用，且都只绑 `127.0.0.1`（`model-ocr` 9101、
+`model-logcluster` 9103）。一旦上层反向代理把入口暴露到公网，必须先完成三处改动：`cops` 的 `deploy.yml`
 密钥分发映射、`app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV`、主机上的
-`/opt/cops/secrets/model-ocr.env`。
+`/opt/cops/secrets/<服务>.env`。
+
+**对日志聚类尤其要先行**：它的 `/cluster` 是往模板树里写数据的接口，入口开放意味着
+任何人都能污染模板，而不只是白烧 CPU。
 
 **这是当前唯一的硬性阻塞项**：在没有 token 的情况下暴露公网，等于把 CPU 密集型接口免费对外开放。
 
@@ -61,7 +65,7 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 接口契约的一个额外要求：预测类输出需要声明形状与分位数语义，契约测试里除了文本相似度，
 应改为断言输出形状、分位数单调性与数值容差。
 
-### 四、日志聚类服务（已实现，待部署）
+### 四、日志聚类服务（已上线）
 
 - 代码在 `services/logcluster/`：Drain3 在线模板挖掘，**没有神经网络权重**，
   所以 `registry/logcluster.yaml` 里登记的是聚类参数与状态格式，而不是权重。
@@ -70,10 +74,12 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 - **有状态**：模板树落在 `STATE_DIR` 的卷里，默认单副本，横向扩容前必须先把状态外置。
   状态带 schema 与聚类参数校验，不兼容时降级为 `/readyz` 503、业务端点 503，
   并且不覆盖旧状态文件（见 `services/logcluster/README.md`）。
-- 端口 `9103`，部署侧的状态卷要求见 `docs/deployment.md`。
+- 上线状态：tag `logcluster/v0.1.0`（提交 `cae8500`）→ 镜像 `v0.1.0-cae8500`
+  → `cops` 单元 `apps/model-logcluster`，容器 healthy，`/readyz` 首次探测即通过。
+  重复部署不会重建容器（全量部署时日志显示 `Up 28 minutes` 而状态卷仍在）。
 - 实测：镜像 158 MB，常驻 40 MiB（11 个模板 / 24 行），24 行聚类 66 ms。
-- 剩余工作：`cops` 侧新增 `apps/model-logcluster/`（含 `/app/state` 状态卷），
-  然后打 `logcluster/v0.1.0` tag 走发布链路。
+- 明确规定不做的事（见 `docs/design.md` D14）：不迁移 NAS 旧实例的历史模板、
+  暂不启用 `AUTH_TOKEN`、状态卷不做自动备份、不停掉 NAS 上的旧实例。
 - 已知取舍：模板频繁变化时每次变化都会压缩 + `fsync` 整个状态文件，
   所以“新模板很多”的突发流量比“命中已有模板”贵得多。
 
@@ -83,9 +89,9 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 |---|---|---|
 | 访问日志提到 INFO | 现在每个请求两行 DEBUG（`on_request` + `on_response`）。改成一条 INFO 级别需要改代码并发新版本，收益是日志量减半、级别语义更准 | 日志量成为问题，或下一次因其它原因发版时一并做 |
 | Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。日志聚类的代码已按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对 Python 服务是空操作 | 出现第二个 Python 服务时把 `ruff check` / `ruff format --check` 接进 CI |
-| 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 出现第二个服务时评估；只有一个服务时收益低于复杂度 |
+| 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 已经有第二个服务了，但两者的重依赖不重叠（Rust 侧是静态二进制 + debian-slim，Python 侧是 pip 装 drain3 + python-slim），抽基础层只是把同一个 slim 换个地方放。等出现第二个把 torch / transformers / ONNX Runtime 烘进镜像的服务再做 |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
-| 指标接入抓取 | `/metrics` 已就绪，但还没有 Prometheus 抓取 `127.0.0.1:9101` | 需要在 Grafana 上看曲线时 |
+| 指标接入抓取 | 两个服务的 `/metrics` 都已就绪（`127.0.0.1:9101`、`127.0.0.1:9103`），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
 | 镜像体积优化 | 当前 133 MB，主要是模型（39 MB）与运行时基础层 | 拉取时间成为瓶颈时 |
 | 批量接口背压 | `/ocr/batch` 目前逐个串行处理，超长批次会长时间占用一个并发槽位 | 出现大批量调用方时 |
 
