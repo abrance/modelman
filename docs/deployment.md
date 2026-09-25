@@ -76,16 +76,27 @@ apps/model-ocr/
 公网入口（TLS、域名反代）由宿主机上的 dockpanel/traefik 管理，不在本仓库也不在
 `cops` 仓库的范围，`cops` 只保证服务在回环地址上监听。这与 `ptdoc-qdrant` 的处理方式一致。
 
-**只要那个入口对公网开放，就必须先给服务加 token。** 未加 token 的 OCR 接口是
-纯 CPU 消耗型接口，公开可达意味着任何人都能用你的算力。三步：
+**当前口径是：不带鉴权就开放**（`docs/design.md` D15、D16）。两个服务都实现了
+`AUTH_TOKEN` 但未启用，所以入口一旦挂上，能访问到的人就能调接口。
+
+两个服务的代价不同，值得分开看：
+
+- **OCR**：`/ocr` 是纯 CPU 消耗型接口，被滥用表现为共享主机的额度被占满，
+  上界（`MAX_CONCURRENCY`、`LIMIT_CONCURRENCY`、compose 的 `cpus`/`memory`）
+  保证对方拿到 503 而不是主机过载；
+- **日志聚类**：`/cluster` 是**写**接口 —— 被滥用是在模板树里埋数据，
+  而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）。
+
+要启用鉴权时，每个服务改三处，**都不需要改服务代码**（两侧的 token 逻辑都已实现
+并有测试覆盖，OCR 页面会自己保存并带上）：
 
 1. 在 `cops` 的 `deploy.yml` 密钥分发映射里加一行（GitHub Actions 不支持按变量名动态读 secret）。
-2. 在 `apps/model-ocr/app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV` 中声明 `AUTH_TOKEN`。
-3. 把 token 写入云主机 `/opt/cops/secrets/model-ocr.env`（权限 600）。
+2. 在 `apps/<服务>/app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV` 中声明 `AUTH_TOKEN`。
+3. 把 token 写入云主机 `/opt/cops/secrets/<服务>.env`（权限 600）。
 
-设置后 `/ocr`、`/ocr/batch`、`/metrics` 需要带 `X-Auth-Token` 或
-`Authorization: Bearer`，`/healthz`、`/readyz`、`/version`、`/models` 仍然免鉴权，
-以便容器在拿到凭据之前就能通过健康检查。
+设置后 `/ocr`、`/ocr/batch`、`/metrics`（或日志聚类的 `/cluster`、`/match`、`/clusters`）
+需要带 `X-Auth-Token` 或 `Authorization: Bearer`；`/healthz`、`/readyz`、`/version`、
+`/models` 仍然免鉴权，以便容器在拿到凭据之前就能通过健康检查。
 
 ## 把 OCR 页面（`/ui`）对公网或手机开放
 
