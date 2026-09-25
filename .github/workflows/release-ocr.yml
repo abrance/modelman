@@ -45,6 +45,14 @@ jobs:
             echo "tag 必须形如 ocr/v1.2.3，实际为 ${ref}" >&2
             exit 1
           fi
+          # Cargo.toml 里的版本是版本的唯一来源，tag 必须与它一致。
+          # 不一致的话镜像里报的版本会和 tag 对不上，运维就失去了判断依据。
+          declared="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          if [ "v${declared}" != "${version}" ]; then
+            echo "tag 是 ${version}，但 Cargo.toml 里写的是 ${declared}" >&2
+            exit 1
+          fi
+
           short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
           # 镜像 tag 始终带提交短 sha，保证同名 tag 不出现在两个不同内容上：
           # 镜像站按 tag 缓存，可覆盖的 tag 会拿到陈旧层。
