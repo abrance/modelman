@@ -82,7 +82,7 @@ apps/model-ocr/
 两个服务的代价不同，值得分开看：
 
 - **OCR**：`/ocr` 是纯 CPU 消耗型接口，被滥用表现为共享主机的额度被占满，
-  上界（`MAX_CONCURRENCY`、`LIMIT_CONCURRENCY`、compose 的 `cpus`/`memory`）
+  上界（OCR 是 `MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS`；日志聚类是 `MAX_CONCURRENCY`、`LIMIT_CONCURRENCY`；外加 compose 的 `cpus`/`memory`）
   保证对方拿到 503 而不是主机过载；
 - **日志聚类**：`/cluster` 是**写**接口 —— 被滥用是在模板树里埋数据，
   而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）。
@@ -104,7 +104,7 @@ apps/model-ocr/
 `docs/ocr-ui.md`。它和 API 在同一个端口上，所以开放它就是把 9101 暴露出去。
 
 **当前的决定是：不带鉴权就开**（`docs/design.md` D15）。也就是任何能访问入口的人
-都能调 `/ocr`；上界（`MAX_CONCURRENCY=2`、`LIMIT_CONCURRENCY=8`、compose 的
+都能调 `/ocr`；上界（`MAX_CONCURRENCY=2`、`QUEUE_TIMEOUT_SECS=30`、compose 的
 `cpus=2/memory=1500M`）保证被滥用时表现为 503，而不是把共享主机拖垮。
 
 挂入口时只需确认三件与鉴权无关的事：

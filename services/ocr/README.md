@@ -78,7 +78,7 @@ token 无效或缺失时相应输入框会自动展开并标红。
 
 - **HTTPS 是必须的**：HTTP 下 `navigator.clipboard` 不可用，「一键复制」会失效。
 - **鉴权目前不开**（`docs/design.md` D15）：入口挂上就是公开的，任何能访问的人
-  都能调 `/ocr`。影响面被 `MAX_CONCURRENCY`、`LIMIT_CONCURRENCY` 与 compose 限额卡住，
+  都能调 `/ocr`。影响面被 `MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS` 与 compose 限额卡住，
   表现为对方拿到 503 而不是主机过载。以后要收敛只需在 `cops` 开 `AUTH_TOKEN`，
   页面会自动保存并带上，**不用改代码**。
 
@@ -101,6 +101,41 @@ token 无效或缺失时相应输入框会自动展开并标红。
 
 `MAX_SIDE` 默认关闭是刻意的：缩图会抹掉小字号文本，而这些模型恰好擅长识别小字。
 只有在大尺寸截图占主导且可接受精度变化时才开启。
+
+## 资源占用与上限
+
+**上传的图片不落盘。** multipart 字段直接读进内存（`api.rs` 的 `collect_uploads` 里
+`field.bytes()`），解码、缩放、推理也都在内存里完成，进程运行期间不写任何临时文件。
+所以这个服务写不满磁盘，它消耗的是内存，而内存的每一层都有闸门。
+
+| 闸门 | 数值 | 位置 |
+|---|---|---|
+| 单张图体积 | `MAX_IMAGE_BYTES`，默认 20 MiB | 先看 `content-length` 头，读完再判一次 |
+| 单请求 body | `MAX_IMAGE_BYTES × 4`，默认 80 MiB | `DefaultBodyLimit`，防畸形上传 |
+| 解码结果 | 宽/高 ≤ 20000、单张位图 ≤ 512 MiB | `decode_image` 里的 `image::Limits` |
+| 在飞请求数 | `MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS` | 等不到槽位的请求到超时返回 503，不无限堆积 |
+
+峰值 ≈ 模型常驻（两档 76 MB）+ 在飞数量 × 单张峰值，容器的 `memory` 上限是 1500 MB。
+
+`MAX_SIDE=0`（默认，不缩放）下要留意：`MAX_IMAGE_BYTES` 卡的是**压缩字节数**，不是解码
+后的位图，一张高压缩比的大 PNG 能解出几百 MB 的位图（512 MiB 那道闸拦住）。真被这种图
+刷，表现是容器 OOM 重启，不是磁盘涨。要压掉这个峰值就设 `MAX_SIDE=1920`，代价见上一节。
+
+宿主机上真正会长的是下面这些，都不归这个服务管，但排查磁盘时先看它们：
+
+| 增长点 | 上限 | 机制 |
+|---|---|---|
+| 容器日志（每个请求 2 行 DEBUG 访问日志） | 每容器 60 MB | `cops` 的 compose：`max-size 20m` / `max-file 3` |
+| 镜像 | 保留 5 天 | `cops` 的 `scripts/deploy.sh`：`image prune --filter until=120h` |
+| 入口对请求体的磁盘缓冲 | 不在本仓库 | traefik 默认流式转发、不缓冲；换成会缓冲的入口后，大图会先落宿主机 `/tmp` |
+
+自查（在云主机上）：
+
+```bash
+docker system df
+du -sh /var/lib/docker/containers/*/ | sort -h | tail -5
+df -h /
+```
 
 ## 有意的行为差异
 
