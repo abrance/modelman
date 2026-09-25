@@ -131,6 +131,9 @@ jobs:
             echo "   不一致时服务会降级为 \`/readyz\` 503 并拒绝覆盖旧状态，"
             echo "   回滚不是只改 tag —— 详见 \`docs/deployment.md\`。"
             echo
-            echo "改完开 PR 合入 main，deploy.yml 会自动 SSH 到云主机部署。"
-            echo "部署前请确认路由器/安全组没有把 9103 对公网开放（compose 默认只绑 127.0.0.1）。"
+            echo "改完开 PR 合入 main：cops 的 deploy.yml 按单元登记的目标主机部署。"
+            echo "model-logcluster 现在部署在 cloud3 的 k3s（\`apps/model-logcluster/app.conf\` 里的 \`DEPLOY_TARGET=cloud3\`），"
+            echo "入口是 \`https://logcluster.xiaoyxq.top\`（Traefik 终止 TLS，证书自动签发）。"
+            echo "注意口径变化：该入口**公网可达且不启用鉴权**，而 \`/cluster\` 是写接口 —— 任何人都能往模板树里埋数据；"
+            echo "要收敛就在 \`apps/model-logcluster/.env\` 里填 \`AUTH_TOKEN\` 并按该文件说明声明 SECRET_ENV。"
           } >> "${GITHUB_STEP_SUMMARY}"
