@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用真实浏览器跑一遍 OCR 页面（`/ui`）的验收清单。
+"""用真实浏览器跑一遍 OCR 页面（`/`）的验收清单。
 
 把 `docs/ocr-ui.md` 的「手动验收」变成可重跑的脚本。
 
@@ -65,7 +65,7 @@ def open_page(
     browser: Browser, base: str, token: str = "", viewport: dict | None = None
 ) -> Page:
     page = browser.new_page(viewport=viewport or {"width": 390, "height": 844})
-    page.goto(f"{base}/ui", wait_until="networkidle")
+    page.goto(f"{base}/", wait_until="networkidle")
     if token:
         set_token(page, token)
     return page
@@ -165,7 +165,7 @@ def scenario_core(browser: Browser, args: argparse.Namespace) -> None:
     # 复制与导出（剪贴板权限按 context 给）
     context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
     clip = context.new_page()
-    clip.goto(f"{args.base}/ui", wait_until="networkidle")
+    clip.goto(f"{args.base}/", wait_until="networkidle")
     clip.set_input_files("#file-input", payload)
     wait_for_result(clip)
     clip.locator("#copy-all").click()
@@ -211,7 +211,7 @@ def scenario_auth(browser: Browser, args: argparse.Namespace) -> None:
 
     # 新 context = 干净的 localStorage，等效于没填过 token 的新手机
     fresh = browser.new_context().new_page()
-    fresh.goto(f"{args.base}/ui", wait_until="networkidle")
+    fresh.goto(f"{args.base}/", wait_until="networkidle")
     fresh.set_input_files("#file-input", payload)
     fresh.wait_for_selector("#token-details[open]", timeout=TIMEOUT_MS)
     check(
@@ -233,7 +233,7 @@ def scenario_auth(browser: Browser, args: argparse.Namespace) -> None:
     )
 
     # 页面本身（含静态资源）必须免鉴权，否则手机连填 token 的机会都没有
-    for path in ("/ui", "/ui/app.css", "/ui/app.js"):
+    for path in ("/", "/app.css", "/app.js"):
         status = browser.new_context().request.get(f"{args.base}{path}").status
         check(f"{path} 免鉴权", status == 200, f"HTTP {status}")
 

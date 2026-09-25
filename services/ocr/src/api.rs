@@ -657,20 +657,20 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // `/health` mirrors the legacy endpoint; `/healthz` is what deployment
     // tooling probes. All of them stay reachable without a token so a
     // container can be health-checked before credentials are injected.
-    // 根路径也返回 200：反代与外部探活器常直接探 `/`，404 会被当成不健康。
+    // 根路径放自带页面：反代与外部探活器常直接探 `/`，只要这里还是 200 就不会被
+    // 当成不健康（要 JSON 的存活响应仍然有 `/livez`）。
+    // 免鉴权是刻意的：页面得先能打开，才谈得上填 token。
+    // 三份资源在编译期嵌进二进制，见 docs/ocr-ui.md。
     let open = Router::new()
-        .route("/", get(livez))
+        .route("/", get(crate::ui::index))
+        .route("/app.css", get(crate::ui::css))
+        .route("/app.js", get(crate::ui::js))
         .route("/health", get(health))
         .route("/healthz", get(health))
         .route("/livez", get(livez))
         .route("/readyz", get(readyz))
         .route("/version", get(version))
-        .route("/models", get(models))
-        // 自带 Web 界面。免鉴权是刻意的：页面得先能打开，才谈得上填 token。
-        // 三份资源在编译期嵌进二进制，见 docs/ocr-ui.md。
-        .route("/ui", get(crate::ui::index))
-        .route("/ui/app.css", get(crate::ui::css))
-        .route("/ui/app.js", get(crate::ui::js));
+        .route("/models", get(models));
 
     open.merge(guarded)
         .layer(DefaultBodyLimit::max(body_limit))

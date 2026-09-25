@@ -78,8 +78,9 @@ async fn json_of(response: axum::response::Response) -> serde_json::Value {
 async fn health_endpoints_are_reachable_without_auth() {
     let app = app(Some("shared-secret")).await;
 
-    // 根路径必须也在内：反代与外部探活器常直接探 `/`，404 会被判成不健康。
-    for path in ["/", "/health", "/healthz", "/livez"] {
+    // 根路径不放这里：它现在返回页面（同为 200，不属于 JSON 状态端点），
+    // 见下面的页面测试。要 JSON 的存活响应仍然有 `/livez`。
+    for path in ["/health", "/healthz", "/livez"] {
         let response = app
             .clone()
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
@@ -462,9 +463,9 @@ async fn ui_assets_are_served_with_hardened_headers() {
     let app = app(None).await;
 
     for (path, expected_type) in [
-        ("/ui", "text/html"),
-        ("/ui/app.css", "text/css"),
-        ("/ui/app.js", "application/javascript"),
+        ("/", "text/html"),
+        ("/app.css", "text/css"),
+        ("/app.js", "application/javascript"),
     ] {
         let (status, body, headers) = fetch_text(app.clone(), path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
@@ -491,12 +492,12 @@ async fn ui_assets_are_served_with_hardened_headers() {
 async fn ui_page_points_at_the_real_endpoints() {
     let app = app(None).await;
 
-    let (_, html, _) = fetch_text(app.clone(), "/ui").await;
+    let (_, html, _) = fetch_text(app.clone(), "/").await;
     assert!(html.contains("<title>"), "缺 <title>");
-    assert!(html.contains("/ui/app.js"), "缺脚本引用");
-    assert!(html.contains("/ui/app.css"), "缺样式引用");
+    assert!(html.contains("/app.js"), "缺脚本引用");
+    assert!(html.contains("/app.css"), "缺样式引用");
 
-    let (_, js, _) = fetch_text(app, "/ui/app.js").await;
+    let (_, js, _) = fetch_text(app, "/app.js").await;
     // 页面必须调真正的识别端点，并且带 token 的写法没写错
     assert!(js.contains("/ocr?"), "页面没调用 /ocr");
     assert!(js.contains("X-Auth-Token"), "页面没带 token 头");
@@ -514,7 +515,7 @@ async fn ui_is_open_while_ocr_stays_guarded() {
     let app = app(Some("shared-secret")).await;
 
     // 页面与静态资源免鉴权：否则手机拿不到页面，也就无从填 token
-    for path in ["/ui", "/ui/app.css", "/ui/app.js"] {
+    for path in ["/", "/app.css", "/app.js"] {
         let (status, _, _) = fetch_text(app.clone(), path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
     }

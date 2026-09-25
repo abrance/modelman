@@ -26,10 +26,10 @@ PP-OCR 检测 + 识别服务，通过 MNN 在 CPU 上推理。取代了此前手
 ## 接口
 
 ```
-GET  /            存活探针，等价 /livez（反代/监控探根路径）
-GET  /ui          自带 Web 界面（免鉴权，页面本身不含数据）
-GET  /ui/app.css  界面样式
-GET  /ui/app.js   界面脚本
+GET  /            自带 Web 界面（免鉴权，页面本身不含数据）；根路径不再返回 JSON
+GET  /app.css     界面样式
+GET  /app.js      界面脚本
+GET  /livez       存活探针（根路径返回页面前，这个位置是它）
 GET  /healthz      liveness + 已加载模型
 GET  /readyz       默认档位是否常驻
 GET  /version      版本 / 提交 / 生效配置
@@ -60,7 +60,7 @@ POST /ocr/batch    同一表单内多个 image 字段，逐个返回结果
 
 ## Web 界面
 
-打开 `/ui` 就是一个可以传图看字的页面：点选、拖入、粘贴图片，手机可以直接拍照。
+打开根路径 `/` 就是一个可以传图看字的页面：点选、拖入、粘贴图片，手机可以直接拍照。
 它会列出 `/models` 里的档位、把 `bbox` 叠在缩略图上、支持逐个复制与导出 `.txt`，
 并在浏览器本地留一份只含文字的历史记录。设计与取舍见 `docs/ocr-ui.md`。
 
