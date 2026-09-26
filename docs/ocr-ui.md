@@ -13,7 +13,7 @@
 
 | 约束 | 来源 | 对设计的影响 |
 |---|---|---|
-| 服务只绑 `127.0.0.1:9101` | `deployment.md`（无鉴权服务不直接暴露） | 手机要用必须经云主机 traefik 入口，入口不在本仓库范围内，只能给清单 |
+| 服务无账号体系，暴露面由部署侧决定 | `design.md` D9 | 手机要用必须经 cops 的入口（线上是 k3s 的 IngressRoute），入口不在本仓库范围内 |
 | `AUTH_TOKEN` 当前未启用 | 本项目决定（`design.md` D15） | 挂上入口就是公开的：`/ocr` 谁都能调。影响面被已有的并发上界卡住，要收敛时启用 token 即可（两侧代码已就绪） |
 | 运行环境不保证外网可达 | `design.md`（权重随镜像交付的理由） | 页面不得引用任何 CDN、外部字体、外部脚本 |
 | 一个服务一个镜像、随镜像交付 | `architecture.md` | 页面编译进二进制，不做运行时挂载、不新增容器 |
@@ -32,9 +32,9 @@
 ## 链路
 
 ```
-手机浏览器 ──https──► traefik（云主机，仓库外）
+手机浏览器 ──https──► 入口（cops 侧的 IngressRoute，仓库外）
                         │
-                        └──► 127.0.0.1:9101  ocr 服务
+                        └──► ocr 服务（cloud3 k3s Pod）
                                  GET  /, /app.css, /app.js           （免鉴权）
                                  POST /ocr?model=…                   （需 token）
 ```
@@ -42,9 +42,9 @@
 同源调用，所以**不需要动 CORS**（`CorsLayer::permissive()` 保持现状）；
 也不需要在页面里配置服务地址，一律用相对路径。
 
-注意页面用的是**绝对路径** `/ocr`，所以 traefik 入口必须把**域名根路径**
-转发到 `127.0.0.1:9101`。把服务挂在子路径（如 `https://host/model-ocr/`）
-下会让 `/ocr` 解析不到，这一点写在 `deployment.md` 的清单里。
+注意页面用的是**绝对路径** `/ocr`，所以入口必须把**域名根路径**转到服务
+（线上是 `https://ocr.xiaoyxq.top`）。挂在子路径下会让 `/ocr` 解析不到，
+这一点写在 `deployment.md` 的清单里。
 
 ## 后端
 
@@ -160,7 +160,7 @@
   文档里写明。**HTTPS 是前提**：HTTP 下 token 明文过网。
 - **本次的决定是不启用鉴权**（`design.md` D15）：页面与 API 就那样对公网开着，
   任何能访问入口的人都能调 `/ocr`。上界（`MAX_CONCURRENCY=2`、`QUEUE_TIMEOUT_SECS=30`、
-  compose 的 `cpus=2/memory=1500M`）保证被滥用时对方拿到 503，而不是把共享主机拖垮。
+  k8s resources.limits）保证被滥用时对方拿到 503，而不是把主机拖垮。
 - 要收敛时：`AUTH_TOKEN` 一开，页面会在 `localStorage` 存一份并在每次请求带上，
   401 时自动展开输入框——**不需要改代码，也不需要重新设计**。
 - **HTTPS 仍然是前提**，与鉴权无关：HTTP 下 `navigator.clipboard` 不可用，
@@ -170,7 +170,7 @@
 
 | 层 | 内容 |
 |---|---|
-| Rust HTTP 测试（`tests/http.rs`） | `/` 返回 200 且 `content-type` 为 `text/html` 且响应体含 `<title`；`/app.js`、`/app.css` 的 content-type 正确；`/` 与静态资源在设置了 `AUTH_TOKEN` 时**仍然免鉴权**，而同场景下 `/ocr` 返回 401；三条路由都带 CSP 与 `no-cache` 头 |
+| Rust HTTP 测试（`services/ocr/tests/http.rs`） | `/` 返回 200 且 `content-type` 为 `text/html` 且响应体含 `<title`；`/app.js`、`/app.css` 的 content-type 正确；`/` 与静态资源在设置了 `AUTH_TOKEN` 时**仍然免鉴权**，而同场景下 `/ocr` 返回 401；三条路由都带 CSP 与 `no-cache` 头 |
 | 冒烟（`services/ocr/smoke.sh`） | 追加 `curl -fsS …/` 断言响应含 `<title`，确认镜像是真的带上了页面 |
 | 契约测试 | 不动：`/ocr` 响应结构未变，基线无需重生成 |
 | 手动验收 | 见下 |
@@ -223,7 +223,7 @@ Playwright 驱动真实 Chromium 把上面的手动清单跑一遍（默认场�
 
 每步都可独立验证，前四步之后就已经"能用"。
 
-1. 后端三条路由 + 响应头，配 `tests/http.rs` 四个断言；
+1. 后端三条路由 + 响应头，配 `services/ocr/tests/http.rs` 四个断言；
 2. `index.html` 骨架与 `app.css`（输入 / 结果 / 操作三段，手机优先）；
 3. `app.js`：API 客户端 + 单图流程 + 401 提示；
 4. 多图串行 + 进度 + 单张错误隔离；
@@ -232,4 +232,4 @@ Playwright 驱动真实 Chromium 把上面的手动清单跑一遍（默认场�
 7. 复制（三级降级）；
 8. 历史记录 + 导出；
 9. `smoke.sh` 与四份文档；
-10. 跑 `tools/ui_acceptance.py`（core / auth / too-large 三个场景），再拿真手机过一遍不能自动化的三项（调起相机、HTTPS 剪贴板、安全区）。
+10. 跑 `services/ocr/tools/ui_acceptance.py`（core / auth / too-large 三个场景），再拿真手机过一遍不能自动化的三项（调起相机、HTTPS 剪贴板、安全区）。

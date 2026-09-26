@@ -7,8 +7,8 @@
 
 | 服务 | 任务 | 技术栈 | 权重 | 运行形态 |
 |---|---|---|---|---|
-| [ocr](services/ocr/README.md) | PP-OCR 文字识别 | Rust + MNN | `.mnn` 随镜像交付 | 无状态，`127.0.0.1:9101` |
-| [logcluster](services/logcluster/README.md) | Drain3 日志模板聚类 | Python + FastAPI | 无神经网络权重，参数即"模型" | **有状态**，模板树落在命名卷，`127.0.0.1:9103` |
+| [ocr](services/ocr/README.md) | PP-OCR 文字识别 | Rust + MNN | `.mnn` 随镜像交付 | 无状态 |
+| [logcluster](services/logcluster/README.md) | Drain3 日志模板聚类 | Python + FastAPI | 无神经网络权重，参数即"模型" | **有状态**，模板树落在状态卷（cops 侧为 PVC） |
 
 两者共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
 `make <目标> SERVICE=<name>` 分派。差异只在容器内部。设计依据见 `docs/design.md`。
@@ -41,8 +41,9 @@ modelman/
     ├── architecture.md         # 服务约定与目录职责
     ├── adding-a-service.md     # 新增服务的检查单
     ├── ocr-model-selection.md  # 档位实测对比
-    ├── ocr-ui.md               # OCR 网页界面：设计、交互与部署前置
-    └── deployment.md           # 镜像、镜像源与部署链路
+    ├── ocr-ui.md               # OCR 页面：设计、交互与验收
+    ├── logcluster-ui.md        # 日志聚类页面：设计、交互与验收
+    └── deployment.md           # 发布链路、tag 命名与暴露口径
 ```
 
 想先看全貌从 `docs/design.md` 开始；想知道下一步做什么看 `docs/roadmap.md`。
@@ -143,7 +144,7 @@ Drain3 在线模板挖掘。把一批日志行喂进来，得到每行所属的�
 
 - **"模型"是运行期累积出来的模板树**，`registry/logcluster.yaml` 登记的是聚类
   参数与状态文件格式；
-- **有状态**：状态落在 `STATE_DIR`（部署时是命名卷），所以默认单副本；
+- **有状态**：状态落在 `STATE_DIR`（部署时是状态卷），所以默认单副本；
   状态与参数不兼容时服务降级为 `/readyz` 503、业务端点 503，**不覆盖**旧状态；
 - **镜像回滚不等于状态回滚**，回滚前要一起考虑状态格式，见 `docs/deployment.md`。
 
@@ -152,8 +153,7 @@ Drain3 在线模板挖掘。把一批日志行喂进来，得到每行所属的�
 根路径 `/` 也是自带页面：贴日志看模板，见
 [`docs/logcluster-ui.md`](docs/logcluster-ui.md)。
 
-鉴权现状同 OCR（`design.md` D16、D17）：默认不启用 `AUTH_TOKEN`，只绑回环，
-入口挂上即可用。**代价比 OCR 重** —— 页面上那个「聚类」按钮写的是模板树，
+鉴权现状同 OCR（`design.md` D16、D17）：默认不启用 `AUTH_TOKEN`，入口挂上即可用。**代价比 OCR 重** —— 页面上那个「聚类」按钮写的是模板树，
 谁都能按，而模板污染不自愈；要收敛时启用 `AUTH_TOKEN`，页面不用改。
 
 ## 许可

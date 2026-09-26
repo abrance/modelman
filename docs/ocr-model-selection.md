@@ -62,5 +62,5 @@ MnnError(ModelLoadFailed("Engine creation failed"))
 `registry/ocr.yaml` 的 `excluded` 段记录原因。
 
 若要重新启用，先取到能在 MNN 中正常加载的 medium 权重，加入 `models/`，
-在 `src/config.rs` 的 `MODEL_TIERS` 中登记，然后用
+在 `services/ocr/src/config.rs` 的 `MODEL_TIERS` 中登记，然后用
 `make fixtures` 生成基线并 review 结果。

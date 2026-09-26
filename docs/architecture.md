@@ -30,14 +30,14 @@
 
 ## 服务内部结构
 
-以 `services/ocr` 为例，四层职责分明：
+以 `services/ocr` 为例（下表路径都相对 `services/ocr/`），四层职责分明：
 
 | 文件 | 职责 |
 |---|---|
-| `src/config.rs` | 环境变量解析与模型清单，是唯一读环境变量的地方 |
-| `src/engine.rs` | 引擎生命周期与推理，负责加载、限流、尺寸约束、解码 |
-| `src/api.rs` | HTTP 层：路由、请求校验、响应结构、鉴权、错误码映射 |
-| `src/metrics.rs` | Prometheus 暴露，零外部依赖 |
+| `services/ocr/src/config.rs` | 环境变量解析与模型清单，是唯一读环境变量的地方 |
+| `services/ocr/src/engine.rs` | 引擎生命周期与推理，负责加载、限流、尺寸约束、解码 |
+| `services/ocr/src/api.rs` | HTTP 层：路由、请求校验、响应结构、鉴权、错误码映射 |
+| `services/ocr/src/metrics.rs` | Prometheus 暴露，零外部依赖 |
 
 服务目录里另有两个与具体技术栈无关的约定文件：
 

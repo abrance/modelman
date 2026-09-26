@@ -51,5 +51,5 @@ mnnconvert -f ONNX --modelFile ./ppocrv6_small.onnx --MNNModel ./PP-OCRv6_small_
 
 转换完成后必须做两件事，顺序不可颠倒：
 
-1. 把新文件放入本目录，并在 `src/config.rs` 的 `MODEL_TIERS` 中登记。
+1. 把新文件放入本目录，并在 `services/ocr/src/config.rs` 的 `MODEL_TIERS` 中登记。
 2. 执行 `make fixtures` 生成新的契约测试基线，人工确认识别结果合理后再提交。

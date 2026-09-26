@@ -13,13 +13,13 @@
 
 | 约束 | 来源 | 对设计的影响 |
 |---|---|---|
-| 服务只绑 `127.0.0.1:9103` | `deployment.md` | 浏览器要用必须经云主机入口，入口不在本仓库范围内，只能给清单 |
+| 服务无账号体系，暴露面由部署侧决定 | `design.md` D9 | 浏览器要用必须经 cops 的入口（线上是 k3s 的 IngressRoute），入口不在本仓库范围内 |
 | `AUTH_TOKEN` 当前未启用 | `design.md` D16 | 挂上入口后页面与接口都公开。**代价比 OCR 的页面重**：`/cluster` 是**写**接口，任何人贴日志都会改变模板树 |
 | 模板树是累积状态，污染不自愈 | `design.md` D13/D16 | 页面必须让人一眼看出"这个按钮会写东西"，而不是把它做成一个普通查询界面 |
 | 运行环境不保证外网可达 | `design.md`（权重随镜像交付的理由） | 页面不得引用任何 CDN、外部字体、外部脚本 |
 | 一个服务一个镜像、随镜像交付 | `architecture.md` | 页面随镜像交付，不新增容器、不运行时挂载 |
-| `MAX_LINES=2000`、`MAX_LINE_CHARS=8192`、`MAX_BYTES=8 MiB` | `src/config.py`、`src/api.py` 的 `BodySizeLimitMiddleware` | 客户端先按 `/version` 报的上限算一遍，超了不发请求；服务端仍是最终闸门 |
-| 根路径目前是 404 | `design.md` 服务契约表 | 页面放在根路径，顺带补上这个缺口 |
+| `MAX_LINES=2000`、`MAX_LINE_CHARS=8192`、`MAX_BYTES=8 MiB` | `services/logcluster/src/config.py`、`services/logcluster/src/api.py` 的 `BodySizeLimitMiddleware` | 客户端先按 `/version` 报的上限算一遍，超了不发请求；服务端仍是最终闸门 |
+| 根路径曾是 404 | `design.md` 服务契约表 | 页面放在根路径，顺带补上这个缺口 |
 
 ## 非目标
 
@@ -35,18 +35,18 @@
 ## 链路
 
 ```
-浏览器 ──http(s)──► 入口（云主机，仓库外）
-                      │
-                      └──► 127.0.0.1:9103  logcluster 服务
-                               GET  /, /app.css, /app.js   （免鉴权）
-                               GET  /healthz, /version     （免鉴权，页面读状态与上限）
-                               GET  /clusters              （当前免鉴权）
-                               POST /cluster, /match       （当前免鉴权）
+浏览器 ──https──► 入口（cops 侧的 IngressRoute，仓库外）
+                    │
+                    └──► logcluster 服务（cloud3 k3s Pod）
+                             GET  /, /app.css, /app.js   （免鉴权）
+                             GET  /healthz, /version     （免鉴权，页面读状态与上限）
+                             GET  /clusters              （当前免鉴权）
+                             POST /cluster, /match       （当前免鉴权）
 ```
 
 同源调用，所以不需要动 CORS。页面一律用**绝对路径**（`/cluster`、`/clusters`），
-与 OCR 页面同款约定：入口必须把**域名根路径**转发到 `127.0.0.1:9103`，
-挂在子路径下会打不开数据。
+与 OCR 页面同款约定：入口必须落在**域名根路径**（线上是
+`https://logcluster.xiaoyxq.top`），挂在子路径下会打不开数据。
 
 ## 后端
 
@@ -63,9 +63,9 @@
 
 ### 实现要点
 
-- **启动时把三份文件读进内存**（`src/ui.py` 模块级 `read_text`）。Python 没有
+- **启动时把三份文件读进内存**（`services/logcluster/src/ui.py` 模块级 `read_text`）。Python 没有
   `include_str!` 那种编译期嵌入，用"启动时读"换同样的效果：文件缺失就是启动失败，
-  而不是运行时 404。文件放 `src/static/` 下，因为 `Dockerfile` 只 `COPY .../src`。
+  而不是运行时 404。文件放 `services/logcluster/src/static/` 下，因为 `Dockerfile` 只 `COPY services/logcluster/src`。
 - **不加依赖**：不用 `StaticFiles` 挂目录——那会暴露整个目录、多一层中间件，
   三个路由各返回一个 `Response` 就够。
 - **响应头**：`Cache-Control: no-cache`（换镜像后浏览器拿到旧页面比多几个字节麻烦得多）；
@@ -144,9 +144,9 @@
 
 | 层 | 覆盖 |
 |---|---|
-| `tests/test_http.py` | 三条路由 200、content-type 与 `utf-8`、`no-cache`、CSP 三项；页面引用 `/app.js` 与 `/app.css`；`app.js` 调 `/cluster`、`/match`、`/clusters` 且带 `X-Auth-Token`，且**不含** `innerHTML`；设置 `AUTH_TOKEN` 时页面仍免鉴权，而同场景下 `/cluster` 返回 401 |
+| `services/logcluster/tests/test_http.py` | 三条路由 200、content-type 与 `utf-8`、`no-cache`、CSP 三项；页面引用 `/app.js` 与 `/app.css`；`app.js` 调 `/cluster`、`/match`、`/clusters` 且带 `X-Auth-Token`，且**不含** `innerHTML`；设置 `AUTH_TOKEN` 时页面仍免鉴权，而同场景下 `/cluster` 返回 401 |
 | `smoke.sh`（容器内） | 三条 `curl` 断言：`/` 含 `<title`、`/app.css` 含 CSS 变量、`/app.js` 含 `X-Auth-Token`，并检查响应头 |
-| `tools/ui_acceptance.py`（真浏览器，可选） | 贴三行 → 聚类出模板；模板面板出现条目；只匹配标注未写入；超 `MAX_LINES` 时按钮被禁用；无 console 报错；手机宽度无横向溢出 |
+| `services/logcluster/tools/ui_acceptance.py`（真浏览器，可选） | 贴三行 → 聚类出模板；模板面板出现条目；只匹配标注未写入；超 `MAX_LINES` 时按钮被禁用；无 console 报错；手机宽度无横向溢出 |
 
 ## 风险
 
@@ -171,9 +171,9 @@
 ## 实施顺序
 
 1. 本文件（设计）与 `design.md` D17，先评审再动代码。
-2. 后端三条路由 + `src/static/` 三份文件。
-3. `tests/test_http.py` 补齐，`smoke.sh` 加断言。
-4. `tools/ui_acceptance.py` 与真浏览器过一遍。
+2. 后端三条路由 + `services/logcluster/src/static/` 三份文件。
+3. `services/logcluster/tests/test_http.py` 补齐，`smoke.sh` 加断言。
+4. `services/logcluster/tools/ui_acceptance.py` 与真浏览器过一遍。
 5. 文档与接口表同步。
-6. 发版：`src/build_info.py` 的 `VERSION` 涨到 `0.1.1`，打 `logcluster/v0.1.1`；
+6. 发版：`services/logcluster/src/build_info.py` 的 `VERSION` 涨到 `0.1.1`，打 `logcluster/v0.1.1`；
    `cops` 那边挂入口（HTTPS + 根路径）。
