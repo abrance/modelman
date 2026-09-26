@@ -199,8 +199,8 @@ curl -s http://127.0.0.1:8080/clusters
 
 ## 契约测试
 
-`tests/fixtures/case_NN.txt` 是**合成的**日志样本（不含任何真实数据），
-`baseline.json` 与 `case_NN.expected.json` 是基线：
+`tests/fixtures/` 下的样本文件是**合成的**日志样本（不含任何真实数据），
+`tests/fixtures/baseline.json` 与各样本的 `*.expected.json` 是基线：
 
 - 所有样本按固定顺序喂给同一棵从空开始的状态树（生产也是累积学习）；
 - 逐行比对模板字符串、簇 ID、`change_type`，再比对每个样本结束时的模板数与累计行数；

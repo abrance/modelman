@@ -85,7 +85,7 @@ CI 遍历 `services/*/service.mk` 得到服务矩阵，**新增服务不需要�
 
 1. 把若干真实样本放进 `tests/fixtures/`，命名用中性的 `case_NN.<ext>`，
    具体内容与期望值写在基线文件里。
-2. 写一个生成基线的可执行程序（参考 `src/bin/gen-fixtures.rs`），
+2. 写一个生成基线的可执行程序（参考 `services/ocr/src/bin/gen-fixtures.rs`），
    输出每样本的期望结果与整体基线。
 3. 写契约测试：逐样本比对，并检查汇总延迟不劣化。
 4. 跑一遍生成基线，**人工确认结果合理**，再提交。
@@ -106,7 +106,7 @@ make smoke SERVICE=forecast
 ```
 
 `make smoke` 会构建镜像、起容器、等就绪、打一次真实请求并报告健康状态，
-行为由 `services/forecast/smoke.sh` 定义，CI 与发布流程跑的是同一个脚本。
+行为由新服务的 `smoke.sh` 定义，CI 与发布流程跑的是同一个脚本。
 需要手工进容器看时用 `make image` + `make image-run`。
 
 确认容器内 `/healthz`、`/readyz`、`/version`、`/models` 都正常，
@@ -121,3 +121,4 @@ make smoke SERVICE=forecast
 2. 在 `cops` 仓库新增 `apps/model-forecast/`，包含 `.env`、`compose.yaml`、`app.conf`，
    端口从 91xx 段取下一个可用值。
 3. 按 `docs/deployment.md` 的说明确认暴露方式与资源上限。
+4. 跑一遍 `make docs-check`，确认接口契约表（`AGENTS.md` 与 `docs/design.md`）已同步新端点。

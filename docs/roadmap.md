@@ -12,38 +12,26 @@
 | 契约测试门禁 | 已生效 | 20 张样本 + 基线，逐样本比对行数与相似度 |
 | 服务契约端点 | 已上线 | `/` `/livez` `/healthz` `/readyz` `/version` `/models` `/metrics` `/ocr` `/ocr/batch` |
 | 访问日志 | 已上线 | `tower_http=debug`，形如 `finished processing request latency=28 ms status=200` |
-| 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → SSH compose → 健康门禁 |
-| 资源限额与磁盘回收 | 已生效 | 容器 `memory=1.5G`、`cpus=2`；`deploy.sh` 按 120 小时窗口回收旧镜像 |
+| 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → 按单元部署（cloud3 k3s：kubectl apply + rollout + 健康门禁） |
+| 资源限额 | 已生效 | k8s resources.limits：ocr 8 核/1500Mi、logcluster 1.5 核/256Mi（口径见 cops 侧 k8s.yaml） |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
-| 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.1-4c4f4e1` 部署在 `127.0.0.1:9103`，容器 healthy，模板树落在命名卷 `model-logcluster_state`；`cops` 侧单元 `apps/model-logcluster` |
+| 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.1-4c4f4e1` 跑在 cloud3（k3s），入口 `https://logcluster.xiaoyxq.top`，模板树落在 PVC `model-logcluster-state`；`cops` 侧单元 `apps/model-logcluster` |
 | 日志聚类自带 Web 界面 | 已上线 | `GET /`：贴日志 → 看模板与本次变更，含只匹配、模板树面板、写入提示；三份静态资源随镜像交付，不启动新容器。设计见 `docs/logcluster-ui.md` |
-| OCR 自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。镜像 `v0.1.3-6476ffb` 已部署到 `127.0.0.1:9101`，入口按域名根路径转发；真浏览器验收 19/19 是打线上入口跑的。设计见 `docs/ocr-ui.md` |
+| OCR 自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。镜像 `v0.1.3-6476ffb` 跑在 cloud3（k3s），入口 `https://ocr.xiaoyxq.top` 按根路径转发；真浏览器验收 19/19 是打线上入口跑的。设计见 `docs/ocr-ui.md` |
 
-实测指标：单档常驻 16.8 MiB，加载两档 76.5 MiB；`v6small` p50 6.5 ms、p95 16.9 ms（本机），
-云主机端到端 28–54 ms；镜像 133 MB（压缩）/ 214 MB（落盘）。
+实测指标（口径：预热后 + 20 次真实请求后的稳态 RSS）：单档约 74 MB、两档约 95 MB；
+`v6small` p50 6.5 ms、p95 16.9 ms（本机），云主机端到端 28–54 ms；
+镜像 133 MB（压缩）/ 214 MB（落盘）。
 
 ## 下一步
 
 按依赖顺序排列，前一项是后一项的前提或输入。
 
-### 一、对外开放的鉴权口径
+### 一、对外开放的鉴权口径（已定，不再是"下一步"）
 
-两个服务都已实现 `AUTH_TOKEN`，但都未启用，且都只绑 `127.0.0.1`（`model-ocr` 9101、
-`model-logcluster` 9103）。
-
-**当前口径：直接开，不启用鉴权**（`docs/design.md` D15）。也就是任何能访问入口的人
-都能调接口；影响面由并发上界与 compose 限额卡住（滥用表现为 503，不是主机过载）。
-
-要收敛时，每个服务只需三处改动，**不需要改服务代码**：`cops` 的 `deploy.yml`
-密钥分发映射、`app.conf` 的 `SECRET_ENV` 与 `REQUIRED_ENV`、主机上的
-`/opt/cops/secrets/<服务>.env`。两侧的 token 逻辑都已实现并有测试覆盖；
-OCR 页面会自己保存并带上 token。
-
-**日志聚类值得单独掂量**：它的 `/cluster` 是往模板树里写数据的接口，入口开放意味着
-任何人都能污染模板（不只是白烧 CPU），而模板污染不会自动恢复。
-
-OCR 页面（`/`）与 API 同端口，开放页面等于开放 9101；挂入口时仍需确认的两件与
-鉴权无关的事（HTTPS、入口落在域名根路径）写在 `docs/deployment.md`。
+**口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），两个服务的入口都
+已公网可达。统一鉴权在外层做（见中期表），届时重新评估服务侧 `AUTH_TOKEN` 的去留；
+要提前收敛，cops 三处即可，见 `docs/deployment.md`。
 
 ### 二、资源规划决策（决定后续所有工作量）
 
@@ -51,7 +39,7 @@ OCR 页面（`/`）与 API 同端口，开放页面等于开放 9101；挂入口
 
 | 服务 | fp32 / PyTorch 估算 | 量化后估算 |
 |---|---|---|
-| OCR（已上线） | 16.8 MiB（单档常驻） | 不适用 |
+| OCR（已上线） | 约 74 MB 稳态（两档约 95 MB） | 不适用 |
 | 时序预测（Chronos-2 / TimesFM 2.5 一类，约 200M 参数） | 1.0–1.3 GB | 300–500 MB（ONNX int8） |
 | 日志聚类（Drain3，纯 Python，无神经网络） | 40 MiB 起步（实测 11 个模板），随模板树增长 | 不适用 |
 
@@ -84,13 +72,12 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
   状态带 schema 与聚类参数校验，不兼容时降级为 `/readyz` 503、业务端点 503，
   并且不覆盖旧状态文件（见 `services/logcluster/README.md`）。
 - 上线状态：tag `logcluster/v0.1.1`（提交 `4c4f4e1`）→ 镜像 `v0.1.1-4c4f4e1`
-  → `cops` 单元 `apps/model-logcluster`，容器 healthy，`/readyz` 首次探测即通过。
-  重复部署不会重建容器（全量部署时日志显示 `Up 28 minutes` 而状态卷仍在）。
-- 实测：镜像 158 MB，常驻 40 MiB（11 个模板 / 24 行），24 行聚类 66 ms。
-- 明确规定不做的事（见 `docs/design.md` D14）：不迁移 NAS 旧实例的历史模板、
-  暂不启用 `AUTH_TOKEN`、状态卷不做自动备份。
-- NAS 上的旧实例**已停**（D16）：现在 `127.0.0.1:9103` 是唯一的日志聚类服务，
-  历史模板没有迁过来，一切从空树重新累积。配套要注意两处外部引用已失效：
+  → `cops` 单元 `apps/model-logcluster`，跑在 cloud3（k3s），入口
+  `https://logcluster.xiaoyxq.top`，健康门禁首探即过。
+- 实测：镜像 158 MB；稳态内存约 55 MB（空树 + 24 行聚类，读 `/proc/1/status`），24 行聚类 7–12 ms。
+- 明确规定不做的事（见 `docs/design.md` D14）：不迁移 NAS 旧实例的历史模板、状态卷不做自动备份。
+- NAS 上的旧实例**已停**（D16）：唯一的日志聚类服务在 cloud3 上，模板树从空树
+  重新累积（cloud2 时代的卷没有迁过来，状态迁移步骤在 cops 的迁移设计里）。配套要注意两处外部引用已失效：
   `nas-log-cluster` 技能里的默认端点 `xiaoyxq.top:18083`、以及 kuba 仓库里那份
   `nas-log-cluster-deployment.md`。
 - 鉴权口径与 OCR 同（D16）：不启用 `AUTH_TOKEN`，入口挂上即可用。**代价比 OCR 重** ——
@@ -121,7 +108,7 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 | 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 已经有第二个服务了，但两者的重依赖不重叠（Rust 侧是静态二进制 + debian-slim，Python 侧是 pip 装 drain3 + python-slim），抽基础层只是把同一个 slim 换个地方放。等出现第二个把 torch / transformers / ONNX Runtime 烘进镜像的服务再做 |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
 | 统一鉴权 | 现在两个服务都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
-| 指标接入抓取 | 两个服务的 `/metrics` 都已就绪（`127.0.0.1:9101`、`127.0.0.1:9103`），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
+| 指标接入抓取 | 两个服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
 | 镜像体积优化 | 当前 133 MB，主要是模型（39 MB）与运行时基础层 | 拉取时间成为瓶颈时 |
 | 批量接口背压 | `/ocr/batch` 目前逐个串行处理，超长批次会长时间占用一个并发槽位 | 出现大批量调用方时 |
 | OCR 是否开启 `MAX_SIDE` | 现在为 `0`（不缩放），解码位图只靠代码里 512 MiB 那道闸兜住。开启（如 `1920`）能压掉大图的内存峰值，代价是超大截图上的小字识别率可能下降 | 内存告警、出现 OOM 重启，或大尺寸截图成为主要输入时 |
