@@ -165,5 +165,5 @@ PaddleOCR，沿用上游 Apache-2.0，出处见 `services/ocr/models/README.md`�
 ## 交付
 
 本仓库不负责部署。打 tag 后由 CI 构建并推送到 GHCR，再由 `cops` 仓库固定镜像 tag
-完成部署。tag 约定 `<服务名>/v<版本>`（如 `ocr/v0.1.1`、`logcluster/v0.1.0`），
+完成部署。tag 约定 `<服务名>/v<版本>`（如 `ocr/v0.1.3`、`logcluster/v0.1.1`），
 镜像 tag 形如 `<版本>-<提交短 sha>`，永不覆盖。流程见 `docs/deployment.md`。
