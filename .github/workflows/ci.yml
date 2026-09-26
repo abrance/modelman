@@ -54,6 +54,10 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v5
 
+      # 文档一致性：链接、契约表与 design.md 对齐、过期口径（tools/docs_check.py）。
+      - name: 文档一致性
+        run: make docs-check
+
       - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
         with:

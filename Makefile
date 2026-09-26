@@ -96,6 +96,10 @@ fmt-check: ## 检查 Rust 代码格式
 clippy: ## 静态检查 Rust workspace
 	$(CARGO) clippy --workspace --all-targets -- -D warnings
 
+.PHONY: docs-check
+docs-check: ## 文档一致性：链接、契约表、过期口径
+	python3 tools/docs_check.py
+
 .PHONY: clean
 clean: service-check ## 清理该服务的构建产物
 	$(call need,SERVICE_CLEAN)
