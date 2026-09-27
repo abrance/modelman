@@ -42,6 +42,8 @@ docs/                设计、规划、架构约定、扩展与部署说明
 | 仓库内的目录职责、分层要求、推理侧硬约束 | `docs/architecture.md` |
 | 怎么新增一个服务 | `docs/adding-a-service.md` |
 | 镜像与部署链路 | `docs/deployment.md` |
+| 平台整体形态：工作台与能力库怎么分层、能力与物料落在哪里 | `docs/platform.md` |
+| 工作台（model-agent）的骨架：进程形态、卷布局、能力加载与端点 | `docs/agent-design.md` |
 
 ## 服务接口约定
 
