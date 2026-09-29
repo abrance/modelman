@@ -1,0 +1,162 @@
+{
+  "createdAt": "2026-09-28T23:21:39.509Z",
+  "updatedAt": "2026-09-29T00:02:22.893Z",
+  "projectDir": "/opt/mystorage/github/modelman",
+  "plan": "(state was created by grill_record_turns; no plan recorded)",
+  "turns": [
+    {
+      "decisionStatus": "resolved",
+      "question": "你要体验的「oh-my-pi」是哪一个？",
+      "recommendedAnswer": "omp（can1357/oh-my-pi，Pi 的 fork）",
+      "userAnswer": "omp（can1357/oh-my-pi，Pi 的 fork）",
+      "notes": "另两个同名项目（npm oh-my-pi@0.2.0、changhochien/oh-my-pi）出局；域名 omp 与命令名对应。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "omp.xiaoyxq.top 上要哪种形态？（omp 无官方 HTTP 服务端）",
+      "recommendedAnswer": "A 浏览器终端（ttyd + tmux）",
+      "userAnswer": "自定义：omp 自己生态的 web ui 扩展，类似 pi-web 的能力",
+      "notes": "推翻了我的 A-E 选项；后续查证 omp 生态无 pi-web 级 Web 工作台。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "镜像怎么来？（预编译二进制 / npm 包 / 官方 Dockerfile 自编译）",
+      "recommendedAnswer": "A 官方预编译二进制 omp-linux-x64 + 薄镜像",
+      "userAnswer": "自定义：需要安装一些额外的包，看着加",
+      "notes": "路由决策交给我：按实际需要加包，不限于单一交付形态。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "模型走哪家？",
+      "recommendedAnswer": "A 复用 777ai（api.boboa.top，glm-5.3）",
+      "userAnswer": "A 复用现有 777ai（api.boboa.top，glm-5.3 / GLM-5.3-Flash）",
+      "notes": "需实测 omp/pi 能否吃 openai-responses 端点。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "公网入口鉴权怎么设？",
+      "recommendedAnswer": "A 单独密码 + 独立 secret",
+      "userAnswer": "B 复用 pi-web 的密码（同一个 secret 值）",
+      "notes": "与 model-agent 共用一个密码值；omp-web 认 PI_WEB_PASSWORD，机制可直接复用。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "工具面开到哪？",
+      "recommendedAnswer": "不动默认，按需再加",
+      "userAnswer": "lsp + web_search 免 key 源 + 子代理 task/advisor + GitHub CLI",
+      "notes": "不装浏览器、不装 MCP、不装 python eval。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "状态卷 PVC 给多大？",
+      "recommendedAnswer": "4Gi",
+      "userAnswer": "4Gi"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "omp.xiaoyxq.top 的 A 记录谁加？",
+      "recommendedAnswer": "用户加：omp.xiaoyxq.top → 186.244.201.55",
+      "userAnswer": "我来加：omp.xiaoyxq.top → 186.244.201.55"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "这个实例的定位？",
+      "recommendedAnswer": "A 实验田：随时可删可重建",
+      "userAnswer": "A 实验田：随时可删可重建，不跟主实例一起升级",
+      "notes": "omp 迭代极快（v18.4.2 当天发版），先当沙盒。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "没有现成 pi-web 级 Web 界面时，要哪种？（collab / collab+ttyd / 自建前端 / 只 ttyd / 官方中继）",
+      "recommendedAnswer": "A 自建 collab 中继",
+      "userAnswer": "自定义：https://github.com/17380936778/omp-web",
+      "notes": "关键的第三个方案：第三方 omp-web（MIT，pi-web 的 fork，适配 omp 数据面）。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "LSP 语言集装哪些？",
+      "recommendedAnswer": "TS/JS + Python",
+      "userAnswer": "TypeScript/JavaScript（typescript-language-server + biome）+ Go（gopls）",
+      "notes": "不装 Python LSP，与主实例基线不同。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "要不要装 Rust 工具链？",
+      "recommendedAnswer": "A 不装",
+      "userAnswer": "A 不装"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "GitHub CLI 的 token 怎么给？",
+      "recommendedAnswer": "A 给 PAT 走 cops secrets",
+      "userAnswer": "B 只装 gh，暂不配 token"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "advisor 第二模型用哪个？",
+      "recommendedAnswer": "A GLM-5.3-Flash",
+      "userAnswer": "A GLM-5.3-Flash（最省）"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "collab 链接本身即凭据，要不要在 Web 入口再加一层 BasicAuth？",
+      "recommendedAnswer": "A 加 Traefik BasicAuth",
+      "userAnswer": "自定义：不用 collab",
+      "notes": "collab 路线整体出局；鉴权改走 omp-web 自带的 PI_WEB_PASSWORD。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "777ai 若不兼容，退路是什么？",
+      "recommendedAnswer": "A 我另给官方 provider key",
+      "userAnswer": "A 我另给一个官方 provider 的 key"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "重启后常驻会话怎么办？",
+      "recommendedAnswer": "A 自动拉起 tmux + 恢复上次会话",
+      "userAnswer": "自定义：不用 collab",
+      "notes": "随 collab 出局；会话持久化改由卷承担。"
+    },
+    {
+      "decisionStatus": "resolved",
+      "question": "要不要把主工作台的 skill 带进这个实例？",
+      "recommendedAnswer": "A 带（只读带入）",
+      "userAnswer": "B 不带，保持干净（只 omp 自带的）"
+    },
+    {
+      "decisionStatus": "resolved",
+      "notes": "用户的质疑是对的：omp-web 不依赖任何 omp 运行时。实测确认：npm omp-web@0.4.4 依赖 @oh-my-pi/pi-*@~18.1.17，需 Bun ≥1.3.14。",
+      "question": "浏览器里的 agent 引擎是哪个？（我先前说它是上游 pi 0.83）",
+      "recommendedAnswer": "先只上 omp-web",
+      "userAnswer": "我贴的 omp-web 引擎就是 omp 自己的 SDK；你确认一下它依赖的 omp 版本——它不严格绑定 omp 版本，但建议搭配 omp v17.x 或更新"
+    },
+    {
+      "decisionStatus": "resolved",
+      "notes": "实测：omp 18.4.2 + api.boboa.top（api: openai-responses）+ GLM-5.3-Flash → 正常回答；omp-web 0.4.4 读到 omp CLI 写的 jsonl 会话。",
+      "question": "omp v18.4.2 + 777ai 能不能真的跑通？",
+      "recommendedAnswer": "需要实测后才能定",
+      "userAnswer": "（未直接回答，以实测作为确认）"
+    },
+    {
+      "decisionStatus": "open",
+      "notes": "用户标 todo。我的推荐：不 fork（不改上游代码，只包我们自己的镜像），代码落在新仓库 abrance/omp-box。",
+      "question": "omp-web 的上游纪律怎么定？（fork / 自己包 / 直接用现成产物）",
+      "recommendedAnswer": "不 fork：按 npm 包 omp-web@0.4.4 装进我们自己的镜像",
+      "userAnswer": "todo"
+    },
+    {
+      "decisionStatus": "open",
+      "notes": "用户标 todo。实测确认 omp-web 能自建新会话（app/api/agent/new + createAgentSession），所以先不加终端入口也能达成目的。",
+      "question": "若加终端入口，域名怎么放？",
+      "recommendedAnswer": "终端走独立子域 term.omp.xiaoyxq.top；但先不加（omp-web 已能自建会话）",
+      "userAnswer": "todo"
+    },
+    {
+      "decisionStatus": "open",
+      "notes": "用户标 todo。我的推荐：只放 provider 定义 + 默认档 + advisor 档，密钥只引用。",
+      "question": "出厂基线里放什么？（omp 读 models.yml，omp-web 读写 models.json）",
+      "recommendedAnswer": "只放 provider 定义 + 默认档 + advisor 档（yun777 + glm-5.3 / GLM-5.3-Flash）",
+      "userAnswer": "todo"
+    }
+  ]
+}
