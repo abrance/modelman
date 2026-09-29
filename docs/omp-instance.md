@@ -15,7 +15,7 @@
 | 域名 | `omp.xiaoyxq.top`（与主工作台同一台 cloud3、同一套 Traefik + ACME） |
 | 镜像 | 我们自己的镜像，pin omp 与 omp-web 的版本 |
 | 卷 | 独立 PVC 4 Gi，`PI_CODING_AGENT_DIR=/data/agent-home` |
-| 不做 | 不碰主工作台的镜像与卷；不共享基线；不装主工作台的 skill |
+| 不做 | 不碰主工作台的镜像与卷；不共享基线；不装主工作台的 skill；**不开终端入口**（只要 Web） |
 
 ## 形态结论：omp 是 agent，omp-web 才是浏览器面
 
@@ -43,19 +43,26 @@ omp（`can1357/oh-my-pi`）是 **Pi 的一个 fork**，本身是终端编码 age
 | 浏览器自建会话 | 有：`app/api/agent/new` + `lib/rpc-manager.ts` 的 `createAgentSession()`（omp SDK 进程内） |
 | 反代 Host 信任 | 设 `OMP_WEB_HOSTNAME=0.0.0.0` + `OMP_WEB_ALLOWED_HOSTS=omp.xiaoyxq.top` 后，`Host: omp.xiaoyxq.top` 的 `/` 与 `/api/sessions` 均 200。**不需要额外反代层，不需要 fork** |
 | 运行时依赖 | 需 **Bun ≥ 1.3.14**（omp SDK 是 TS 源码 + `bun:` 内置）；omp-web 启动器本身跑在 Node 或 Bun 上 |
+| **纯 Web 端到端（镜像里没有 omp 二进制）** | 通过 `POST /api/cwd/validate` 选定 `/workspace` → `POST /api/agent/new` 建会话提问 → 会话记录里出现 `[user] 'reply with exactly: OK'` 与 `[assistant] 'OK' tokens=18360/3`，走的是 777ai |
+| 不让浏览器撞 `Access denied` 的动作 | 允许的文件根来自**已存在的会话**与显式允许；首次使用必须先走 `POST /api/cwd/validate`（UI 选目录就是这一步），否则 `/api/agent/new` 返回 403 |
 
 ## 镜像
 
+**装什么、不装什么都是实测定的**：omp-web 从不 spawn `omp` 二进制（全仓库无此调用），它在进程内跑 omp SDK，
+所以那个 272 MiB 的官方二进制**不装**（带它镜像 5.23 GB，不带 3.06 GB）。同理也不装 `tmux`（不开终端）。
+
 | 组成 | 来源与 pin |
 |---|---|
-| omp | 官方 release 自包含二进制 `omp-linux-x64`，pin `v18.4.2`，构建期校验 SHA256 |
-| omp-web | npm `omp-web@0.4.4` |
-| Bun | `1.3.14` |
 | 基础 | `node:24-bookworm-slim`（glibc；官方提示 musl 需另装 `libstdc++`/`libgcc`） |
-| 语言能力 | TypeScript/JavaScript（`typescript-language-server` + `biome`）、Go（`gopls`）；**不装 Rust 工具链** |
-| 其它 | `git`、`ripgrep`、`gh`（暂不配 token）、`tmux`（留终端入口用） |
+| omp-web | npm `omp-web@0.4.4`（带 omp SDK `@oh-my-pi/pi-*`） |
+| Bun | `1.3.14`（omp SDK 的运行时） |
+| 语言能力 | TypeScript/JavaScript（`typescript-language-server` + `biome`）、Go（`gopls`） |
+| 其它 | `git`、`ripgrep`、`gh`（暂不配 token） |
+| 体积 | 实测 3.06 GB（未含 LSP；下一步优化见「待定」） |
 
-构建期可以联网（拉 release、装 npm 包）；**运行期不做任何安装动作**，与主工作台同一口径。
+不装：omp 官方二进制（不需要）、Chromium/浏览器工具、MCP、Python eval、Rust 工具链、主工作台的 skill。
+
+构建期可以联网（装 npm 包）；**运行期不做任何安装动作**，与主工作台同一口径。
 
 ## 卷与基线
 
@@ -109,13 +116,12 @@ omp（`can1357/oh-my-pi`）是 **Pi 的一个 fork**，本身是终端编码 age
 
 ## 切片顺序
 
-1. **镜像**：新建仓库（`platform/{docker,runtime,seed}`）＋ CI 出镜像到 GHCR；冒烟：`omp --version`、
-   `bun --version`、omp-web 启动后 `/manifest.webmanifest` 200、`/api/sessions` 200。
+1. **镜像**：新建仓库（`platform/{docker,runtime,seed}`）＋ CI 出镜像到 GHCR；冒烟：`bun --version`、
+   omp-web 启动后 `/manifest.webmanifest` 200、`/api/sessions` 200、`/api/cwd/validate` 可用。
 2. **单元与域名**：cops `apps/omp-web` ＋ 用户给 `omp.xiaoyxq.top` 加 A 记录（→ 186.244.201.55）；
    Traefik 路由与证书签发。
-3. **验收**：浏览器登录；新建会话跑一轮（走 777ai）；LSP 与 `gh` 冒烟；`omp -p` 在容器里跑一次。
-4. **后续（按需）**：终端入口（`term.omp.xiaoyxq.top`）、omp/omp-web 升级流程、基线对账、
-   与主工作台共用 skill 或物料的接缝。
+3. **验收**：浏览器登录；选目录后新建会话跑一轮（走 777ai）；LSP 与 `gh` 冒烟；重启后卷里的会话仍在。
+4. **后续（按需）**：镜像体积优化、omp-web 升级流程、基线对账、与主工作台共用 skill 或物料的接缝。
 
 ## 明确不做
 
@@ -125,15 +131,16 @@ omp（`can1357/oh-my-pi`）是 **Pi 的一个 fork**，本身是终端编码 age
 | 自写 Web 前端 | omp-web 已进程内跑 omp SDK；自写是重复造且要长期跟 omp 版本 |
 | fork omp-web | 不改上游代码就能满足需求（反代与鉴权全走环境变量）；要改再 fork |
 | fork/copy 上游 `17380936778/omp-web` | 它的引擎是 pi 而非 omp，与本文目标不符 |
-| 在第一版就加终端入口 | omp-web 能自建会话，先减小暴露面 |
+| 终端入口（ttyd / tmux） | 只要 Web（用户定）；omp-web 能自建会话，少一个暴露面 |
+| 装 omp 官方二进制 | 不需要（omp-web 不 spawn 它）；带上就多 2.2 GB |
 
 ## 待定
 
 | 待定 | 现状与倾向 |
 |---|---|
 | 镜像仓库落点 | 倾向新建独立仓库（如 `abrance/omp-box`）；不放进 cops（部署仓库不构建镜像） |
-| 终端入口 | 先不加；需要 CLI 行为（`omp stats`、扩展调试）时再加 `term.` 子域 |
-| omp 版本跟进节奏 | 实验田：只在需要时升；升之前重跑本文的实测表 |
+| 镜像体积 | 实建 3.06 GB。尝试过 `oven/bun` 基础镜像 + `bun add -g --omit=optional`（1.94 GB）但启动器入口需包装脚本，未验证完；确认可用再换 |
+| omp-web 版本跟进节奏 | 实验田：只在需要时升；升之前重跑本文的实测表 |
 
 ## 与主工作台的关系（一览）
 
@@ -145,5 +152,5 @@ omp（`can1357/oh-my-pi`）是 **Pi 的一个 fork**，本身是终端编码 age
 | 基线清单 | pi-web fork 仓库里的 seed 清单（6 包 + 1 skill） | omp 的 `models.yml` + `config.yml` |
 | 卷 | `model-agent-data` 4 Gi | `omp-web-data` 4 Gi |
 | 域名 | `ai.xiaoyxq.top` | `omp.xiaoyxq.top` |
-| 密码 | `PI_WEB_PASSWORD` | `OMP_WEB_PASSWORD`（同一值） |
+| 鉴权 | 密码（`PI_WEB_PASSWORD`） | 密码（`OMP_WEB_PASSWORD`，同一值） |
 | provider | `777ai` | `yun777`（同一端点） |
