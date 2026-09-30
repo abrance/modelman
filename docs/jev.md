@@ -99,9 +99,10 @@ cloud3 最初的 vCPU 是 QEMU 老基线（`QEMU Virtual CPU version 2.5+`，36 
 torch 的 CPU 轮子同理，而且这里还有一段事故记录：一开始把阿里云的目录型镜像
 （`pytorch-wheels`）写成唯一源，本机能用，但 GitHub 托管 runner 拉它极慢，
 CI 在 `make test` 的依赖安装上卡满 30 分钟超时，而 `--quiet` 把进度也盖住了，
-日志里只能看到一条命令行。教训是两面的：默认值要选 CI 能过的那个（本地卡住几秒
-就能看出，CI 卡住要等满超时），以及不要为了静默而丢掉进度输出。
-现在 `TORCH_INDEX` 与 `HF_ENDPOINT` 都是可覆盖变量，默认值面向 CI 与 cloud3。
+日志里只能看到一条命令行。教训是三面的：默认值要选 CI 能过的那个（本地卡住几秒
+就能看出，CI 卡住要等满超时）；不要为了静默而丢掉进度输出；以及源不能只换域名
+——官方索引是 PEP 503 要用 `--index-url`，阿里云那个目录列表只能用 `--find-links`。
+现在 `TORCH_SOURCE_ARGS` 与 `HF_ENDPOINT` 都是可覆盖变量，默认值面向 CI 与 cloud3。
 
 ## 精度：这个服务能做什么、不能做什么
 

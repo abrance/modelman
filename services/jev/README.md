@@ -110,22 +110,26 @@ make smoke SERVICE=jev    # 起容器、等就绪、打一次真实判定
 首次 `make build` 要下载 184 MB 的 torch CPU 轮子与 678 MB 权重。权重只在本地
 缺失或摘要不符时才下载。
 
-依赖与权重的取回源都是可覆盖的，因为两台机器上的可达性相反：
+依赖与权重的取回源都是可覆盖的，因为两台机器上的可达性相反，而且两边的
+参数写法也不同（一个是 PEP 503 索引，一个是目录列表）：
 
 | 变量 | 默认（面向 CI / cloud3） | 本机（国内网络） |
 |---|---|---|
-| `TORCH_INDEX` | `https://download.pytorch.org/whl/cpu` | `https://mirrors.aliyun.com/pytorch-wheels/cpu/` |
+| `TORCH_SOURCE_ARGS` | `--index-url https://download.pytorch.org/whl/cpu` | `--find-links https://mirrors.aliyun.com/pytorch-wheels/cpu/` |
 | `HF_ENDPOINT` | `https://huggingface.co` | `https://hf-mirror.com` |
+
+torch 的版本号两侧一致（`torch==2.9.1+cpu`），变的只是源参数。
 
 ```bash
 # 本机（直连 HF 不通、官方 torch 索引报 hash 校验失败）
 make build SERVICE=jev \
-  TORCH_INDEX=https://mirrors.aliyun.com/pytorch-wheels/cpu/ \
+  TORCH_SOURCE_ARGS="--find-links https://mirrors.aliyun.com/pytorch-wheels/cpu/" \
   HF_ENDPOINT=https://hf-mirror.com
 ```
 
 默认值选的是"CI 能过"的那个：CI 卡在依赖安装上要等满 30 分钟才报错，拿不到
-任何有用的日志；本地卡住则几秒就能看出来。
+任何有用的日志；本地卡住则几秒就能看出来。这条结论是有代价换来的——第一版把
+国内镜像写成唯一源，CI 就在安装 torch 上卡满了超时。
 
 ## 配置
 
