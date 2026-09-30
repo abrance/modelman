@@ -10,8 +10,9 @@
 | [ocr](services/ocr/README.md) | PP-OCR 文字识别 | Rust + MNN | `.mnn` 随镜像交付 | 无状态 |
 | [logcluster](services/logcluster/README.md) | Drain3 日志模板聚类 | Python + FastAPI | 无神经网络权重，参数即"模型" | **有状态**，模板树落在状态卷（cops 侧为 PVC） |
 | [forecast](services/forecast/README.md) | TimesFM 3.0 时序预测（点预测 + 分位） | Python + FastAPI + PyTorch | 1.32 GB，构建期按 revision + sha256 取回，**不进仓库也不进构建上下文** | 无状态 |
+| [jev](services/jev/README.md) | System One 结构化判定（choice / noul / score） | Python + FastAPI + Laya | 678 MB，构建期按 revision 取回并校验 sha256 | 无状态 |
 
-三者共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
+四个服务共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
 `make <目标> SERVICE=<name>` 分派。差异只在容器内部。设计依据见 `docs/design.md`。
 
 许可证口径不一，用之前先看 `registry/<服务名>.yaml`：`ocr` 与 `logcluster` 不涉及
@@ -40,10 +41,18 @@ modelman/
 │       ├── service.mk
 │       ├── smoke.sh
 │       └── Dockerfile
-│   └── forecast/               # TimesFM 3.0 时序预测服务（Python，不入 cargo workspace）
-│       ├── src/                # 服务代码；src/static/ 是自带页面（随镜像交付）
-│       ├── tests/fixtures/     # 契约用例 + 基线
-│       ├── tools/              # 权重取回（revision + sha256）、基线生成器、冒烟断言
+│   ├── forecast/               # TimesFM 3.0 时序预测服务（Python，不入 cargo workspace）
+│   │   ├── src/                # 服务代码；src/static/ 是自带页面（随镜像交付）
+│   │   ├── tests/fixtures/     # 契约用例 + 基线
+│   │   ├── tools/              # 权重取回（revision + sha256）、基线生成器、冒烟断言
+│   │   ├── service.mk
+│   │   ├── smoke.sh
+│   │   └── Dockerfile
+│   └── jev/                    # System One 判定服务（Python，不入 cargo workspace）
+│       ├── src/                # 服务代码；src/static/ 是自带判定台
+│       ├── tests/fixtures/     # 判定样本 + 契约基线
+│       ├── tools/              # 权重取回、契约基线生成器、冒烟断言
+│       ├── models/             # 权重落地目录（不进 git，构建期取回并校验）
 │       ├── service.mk
 │       ├── smoke.sh
 │       └── Dockerfile
@@ -194,6 +203,21 @@ TimesFM 3.0（330M 参数，PyTorch CPU）做点预测与分位预测：给一�
 
 服务接口沿用仓库约定，业务端点是 `POST /v1/forecast`；根路径 `/` 也是自带页面。
 鉴权现状同其它服务（不启用 `AUTH_TOKEN`）；**许可证是它的额外边界**，见下一节。
+## 判定服务（jev）
+
+给"让模型回答一个结构化问题"提供自托管后端：一次前向返回 choice / noul / score
+的全部答案与概率，不生成文本。对外协议与 TypeSafe Jev 同形状
+（`POST /v1/systemone`），既有调用方（如 `pi-jev`）把 base url 指过来就能用。
+
+它与另外两个服务有一处交付差异：**权重不在仓库里**。678 MB 超出公开仓库单文件
+100 MB 上限，所以改为构建期按不可变 revision 取回、逐文件校验 sha256，服务启动
+时再校验一次才加载，摘要见 `registry/jev-digests.json`。设计与实测见
+[`docs/jev.md`](docs/jev.md)，部署取值与精度边界见
+[`services/jev/README.md`](services/jev/README.md)。
+
+要特别知道的两点：它的常驻内存 1.7 GB、加载峰值 2.3 GB，是三个服务里最重的
+（`limits` 必须给到 3Gi）；它的细粒度工具路由并不准（自测 6 例对 4 例），
+不要把结果按默认阈值当成无人值守的自动激活依据。
 
 ## 许可
 
@@ -203,10 +227,13 @@ PaddleOCR，沿用上游 Apache-2.0，出处见 `services/ocr/models/README.md`�
 但 TimesFM 3.0 的**权重**沿用上游 `timesfm-non-commercial-license-v1.0`（非商业）：
 自用与评估可以，商业与生产不行，要走到商业那一步就换整档权重（TimesFM 2.5 是
 Apache-2.0）。这一条也写在 `registry/forecast.yaml` 的 `license` 段里。
+`services/logcluster/` 无权重文件。`services/jev/` 的权重来自
+[convaiinnovations/laya](https://huggingface.co/convaiinnovations/laya)
+（Apache-2.0），不随仓库分发，只记录 revision 与 sha256。
 
 ## 交付
 
 本仓库不负责部署。打 tag 后由 CI 构建并推送到 GHCR，再由 `cops` 仓库固定镜像 tag
 完成部署。tag 约定 `<服务名>/v<版本>`（如 `ocr/v0.1.3`、`logcluster/v0.1.1`、
-`forecast/v0.1.0`），
-镜像 tag 形如 `<版本>-<提交短 sha>`，永不覆盖。流程见 `docs/deployment.md`。
+`forecast/v0.1.0`、`jev/v0.1.0`），镜像 tag 形如 `<版本>-<提交短 sha>`，永不覆盖。
+流程见 `docs/deployment.md`。

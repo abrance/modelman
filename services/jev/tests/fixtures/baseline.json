@@ -1,0 +1,166 @@
+{
+  "_comment": "由 tools/gen_fixtures.py 生成，提交前必须人工确认结果合理。answers 逐键比对（概率按 tolerance），延迟只查数量级退化。",
+  "model": {
+    "tier": "multilingual",
+    "device": "cpu",
+    "revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+    "files": {
+      "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+      "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+      "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+      "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1",
+      "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4"
+    }
+  },
+  "params": {
+    "tier": "multilingual",
+    "device": "cpu",
+    "max_len": 1024,
+    "head_max_len": 256
+  },
+  "tolerance": 0.005,
+  "latency_budget_ms": 400,
+  "median_latency_ms": 141.3,
+  "cases": [
+    {
+      "id": "case_01",
+      "note": "中文工具路由：k8s 排障应选中 kubectl_describe",
+      "answers": {
+        "route": {
+          "type": "choice",
+          "choice": "unrelated",
+          "probabilities": {
+            "bash": 0.0465,
+            "grep": 0.0136,
+            "kubectl_describe": 0.0658,
+            "ocr_image": 0.0024,
+            "unrelated": 0.8717
+          },
+          "confidence": 0.6803,
+          "answer_confidence": 0.8717,
+          "action": {
+            "act_probability": 1.0
+          },
+          "distribution": {
+            "bash": 0.0465,
+            "grep": 0.0136,
+            "kubectl_describe": 0.0658,
+            "ocr_image": 0.0024,
+            "unrelated": 0.8717
+          }
+        }
+      },
+      "median_ms": 137.2
+    },
+    {
+      "id": "case_02",
+      "note": "英文工单分诊：choice + noul + score 三问一次前向",
+      "answers": {
+        "department": {
+          "type": "choice",
+          "choice": "billing",
+          "probabilities": {
+            "billing": 1.0,
+            "technical": 0.0,
+            "sales": 0.0
+          },
+          "confidence": 1.0,
+          "answer_confidence": 1.0,
+          "action": {
+            "act_probability": 1.0
+          },
+          "distribution": {
+            "billing": 1.0,
+            "technical": 0.0,
+            "sales": 0.0
+          }
+        },
+        "churn_risk": {
+          "type": "noul",
+          "noul": 0.0189,
+          "confidence": 0.9811,
+          "answer_confidence": 0.9811,
+          "action": {
+            "act_probability": 1.0
+          }
+        },
+        "urgency": {
+          "type": "score",
+          "score": 1.8593,
+          "legend": {
+            "0": "not urgent",
+            "1": "soon",
+            "2": "critical deadline or blocking issue"
+          },
+          "probabilities": {
+            "0": 0.0031,
+            "1": 0.1345,
+            "2": 0.8624
+          },
+          "confidence": 0.6218,
+          "answer_confidence": 0.8624,
+          "action": {
+            "act_probability": 1.0
+          },
+          "distribution": {
+            "0": 0.0031,
+            "1": 0.1345,
+            "2": 0.8624
+          }
+        }
+      },
+      "median_ms": 171.1
+    },
+    {
+      "id": "case_03",
+      "note": "中文请求与英文工具描述混排，检验跨语言判定",
+      "answers": {
+        "route": {
+          "type": "choice",
+          "choice": "ocr_image",
+          "probabilities": {
+            "read": 0.0297,
+            "ocr_image": 0.6201,
+            "unrelated": 0.3502
+          },
+          "confidence": 0.3007,
+          "answer_confidence": 0.6201,
+          "action": {
+            "act_probability": 1.0
+          },
+          "distribution": {
+            "read": 0.0297,
+            "ocr_image": 0.6201,
+            "unrelated": 0.3502
+          }
+        },
+        "needed": {
+          "type": "noul",
+          "noul": 0.9563,
+          "confidence": 0.9563,
+          "answer_confidence": 0.9563,
+          "action": {
+            "act_probability": 1.0
+          }
+        }
+      },
+      "median_ms": 145.5
+    },
+    {
+      "id": "case_04",
+      "note": "门禁用例：带类型注解的补丁应被判定为满足判据",
+      "answers": {
+        "gate": {
+          "type": "noul",
+          "noul": 0.9336,
+          "confidence": 0.9336,
+          "answer_confidence": 0.9336,
+          "action": {
+            "act_probability": 1.0
+          }
+        }
+      },
+      "median_ms": 72.6
+    }
+  ]
+}

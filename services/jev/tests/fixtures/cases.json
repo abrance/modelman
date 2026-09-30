@@ -1,0 +1,100 @@
+{
+  "_comment": "契约测试样本。state 与 questions 是输入，期望结果放在 baseline.json（由 tools/gen_fixtures.py 生成，需人工 review）。样本刻意用中英文混合，因为实际调用方（pi-jev）的输入就是中文提示加英文工具描述。",
+  "cases": [
+    {
+      "id": "case_01",
+      "note": "中文工具路由：k8s 排障应选中 kubectl_describe",
+      "state": {
+        "prompt": "查一下 k8s 里 pod 为什么一直 pending",
+        "tools": [
+          "bash: Execute bash commands in the current working directory",
+          "grep: Search file contents for patterns for a regex",
+          "kubectl_describe: Show details of a Kubernetes resource or pod",
+          "ocr_image: Extract text from an image using the NAS OCR service",
+          "unrelated: No listed tool fits this request"
+        ]
+      },
+      "questions": {
+        "route": {
+          "type": "choice",
+          "instructions": "Which single tool should handle this request?",
+          "criteria": {
+            "bash": "shell commands",
+            "grep": "search file contents",
+            "kubectl_describe": "kubernetes resource inspection",
+            "ocr_image": "read text off an image",
+            "unrelated": "no listed tool fits"
+          }
+        }
+      }
+    },
+    {
+      "id": "case_02",
+      "note": "英文工单分诊：choice + noul + score 三问一次前向",
+      "state": {
+        "subject": "Duplicate charge on invoice #4411",
+        "body": "We were billed twice for March. Please refund the duplicate today or we will cancel our plan."
+      },
+      "questions": {
+        "department": {
+          "type": "choice",
+          "instructions": "Which department should handle this request?",
+          "criteria": {
+            "billing": "invoices, payments, refunds",
+            "technical": "bugs, outages, system errors",
+            "sales": "pricing, new contracts"
+          }
+        },
+        "churn_risk": {
+          "type": "noul",
+          "instructions": "Does the user threaten to cancel or leave?"
+        },
+        "urgency": {
+          "type": "score",
+          "instructions": "How urgent is this request?",
+          "criteria": ["not urgent", "soon", "critical deadline or blocking issue"]
+        }
+      }
+    },
+    {
+      "id": "case_03",
+      "note": "中文请求与英文工具描述混排，检验跨语言判定",
+      "state": {
+        "prompt": "这份截图里的报错文字帮我识别出来",
+        "tools": [
+          "read: Read file contents with offset and limit",
+          "ocr_image: Extract text from an image using the NAS OCR service",
+          "unrelated: No listed tool fits this request"
+        ]
+      },
+      "questions": {
+        "route": {
+          "type": "choice",
+          "instructions": "Which single tool should handle this request?",
+          "criteria": {
+            "read": "read file contents",
+            "ocr_image": "read text off an image",
+            "unrelated": "no listed tool fits"
+          }
+        },
+        "needed": {
+          "type": "noul",
+          "instructions": "Is any listed tool actually needed for this request?"
+        }
+      }
+    },
+    {
+      "id": "case_04",
+      "note": "门禁用例：带类型注解的补丁应被判定为满足判据",
+      "state": {
+        "diff": "diff --git a/x.py b/x.py\n+def f(a: int) -> int:\n+    return a * 2\n"
+      },
+      "questions": {
+        "gate": {
+          "type": "noul",
+          "instructions": "所有函数都带类型注解"
+        }
+      }
+    }
+  ]
+}

@@ -13,3 +13,4 @@ services/jev/models/
 .DS_Store
 .idea/
 .vscode/
+services/*/models/
