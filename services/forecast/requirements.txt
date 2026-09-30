@@ -1,0 +1,14 @@
+# 时序预测服务的运行期依赖。版本全部钉死：预测数值直接受权重与框架版本影响，
+# 浮动版本会让契约基线失去意义。
+#
+# torch 不在这里：它由 Dockerfile 与 service.mk 从 CPU 轮子镜像单独安装
+# （见 services/forecast/Dockerfile）。timesfm 的 `torch` extra 只是加一条
+# `torch>=2.0.0` 依赖，torch 已经装好时不写 extra 更不容易被解析成 PyPI 上
+# 那份带 CUDA 依赖的轮子。
+timesfm==3.0.2
+numpy==2.5.3
+safetensors==0.8.0
+huggingface_hub==1.33.0
+fastapi==0.115.6
+pydantic==2.10.4
+uvicorn[standard]==0.32.1
