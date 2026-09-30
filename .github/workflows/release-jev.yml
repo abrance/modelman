@@ -1,0 +1,149 @@
+name: Release decision service
+
+# 发布由 tag 触发，tag 约定为 <service>/v<semver>，例如 jev/v0.1.0。
+# 流程与仓库既有发布链路一致：CI 只负责产出镜像，部署由 cops 改 tag 完成。
+#
+# 与 release-logcluster.yml 的差别只有两处：tag 前缀与镜像名，另外多一个
+# HF_ENDPOINT build-arg——权重在构建期取回，走哪个源决定了这一步能不能过。
+on:
+  push:
+    tags:
+      - "jev/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 jev/v0.1.0），用于重跑发布"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-jev-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-jev
+  # 权重取回的源。GitHub 托管 runner 在境外，直连 HuggingFace 即可。
+  HF_ENDPOINT: https://huggingface.co
+  # torch 的 CPU 轮子源。官方索引是 PEP 503，runner 拉它很快；
+  # 不要换成国内目录型镜像：那类源要用 --find-links，且在境外 runner 上会卡到超时。
+  TORCH_SOURCE_ARGS: --index-url https://download.pytorch.org/whl/cpu
+
+jobs:
+  release:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本与提交
+        id: meta
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${ref#jev/}"
+          if ! printf '%s' "${version}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag 必须形如 jev/v1.2.3，实际为 ${ref}" >&2
+            exit 1
+          fi
+
+          # src/build_info.py 里的 VERSION 是版本的唯一来源，tag 必须与它一致。
+          # 不一致的话镜像里报的版本会和 tag 对不上，运维就失去了判断依据。
+          declared="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' services/jev/src/build_info.py)"
+          if [ "v${declared}" != "${version}" ]; then
+            echo "tag 是 ${version}，但 services/jev/src/build_info.py 里写的是 ${declared}" >&2
+            exit 1
+          fi
+
+          # 与另外两个服务一致：短 sha 取 7 位
+          short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
+          # 镜像 tag 始终带提交短 sha，保证同名 tag 不出现在两个不同内容上：
+          # 镜像站按 tag 缓存，可覆盖的 tag 会拿到陈旧层。
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${version}-${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+
+      - name: 契约测试（发布门禁）
+        # 镜像一旦推送就会被 cops 引用，因此权重摘要与判定结果的回归必须在推送前拦住。
+        # 这一步会真实加载 678 MB 权重并推理，所以 runner 需要能访问 HuggingFace。
+        env:
+          HF_ENDPOINT: ${{ env.HF_ENDPOINT }}
+          TORCH_SOURCE_ARGS: ${{ env.TORCH_SOURCE_ARGS }}
+        run: make test SERVICE=jev
+
+      - name: 登录 GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送镜像
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/jev/Dockerfile
+          push: true
+          platforms: linux/amd64
+          # 镜像里没有 .git，提交与构建时间只能构建期注入；
+          # HF_ENDPOINT 与 TORCH_SOURCE_ARGS 传进构建，决定依赖与权重从哪个源取回。
+          build-args: |
+            GIT_COMMIT=${{ steps.meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            HF_ENDPOINT=${{ env.HF_ENDPOINT }}
+            TORCH_SOURCE_ARGS=${{ env.TORCH_SOURCE_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=modelman-jev
+            org.opencontainers.image.description=Self-hosted System One typed-decision service (FastAPI + Laya)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试
+        # 与 CI 共用 services/jev/smoke.sh，让"镜像能跑"只有一处定义。
+        env:
+          IMAGE: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          PORT: "18080"
+        run: bash services/jev/smoke.sh
+
+      - name: 发布信息
+        run: |
+          set -euo pipefail
+          {
+            echo "## 判定服务已发布"
+            echo
+            echo "镜像：\`${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "digest：\`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "### cops 侧改动（apps/model-jev/.env）"
+            echo
+            echo '```diff'
+            echo "-MODEL_JEV_IMAGE_TAG=v0.1.0-0000000"
+            echo "+MODEL_JEV_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}"
+            echo '```'
+            echo
+            echo "这个服务是**无状态**的，换 tag 即可回滚。部署时确认三件事："
+            echo
+            echo "1. \`resources.limits.memory\` 不低于 **3Gi**：权重加载峰值实测 2.3 GB，"
+            echo "   低于这个值容器会在加载阶段被 OOM 杀掉；"
+            echo "2. \`INFER_THREADS\` **显式设置**（建议 4）：实测 16 线程时单问延迟从"
+            echo "   207 ms 涨到 2165 ms，共享 vCPU 上给满核数会互相踩；"
+            echo "3. 入口若对公网开放，填 \`AUTH_TOKEN\`：业务端点支持"
+            echo "   \`Authorization: Bearer\`，且判定调用方（如 pi-jev）本来就带这个头。"
+            echo
+            echo "健康门探 \`/readyz\`（权重未常驻时 503），\`start-period\` 至少 120 秒。"
+            echo
+            echo "改完开 PR 合入 main：cops 的 deploy.yml 按单元登记的目标主机部署。"
+          } >> "${GITHUB_STEP_SUMMARY}"

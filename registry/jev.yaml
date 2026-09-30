@@ -1,0 +1,138 @@
+# 模型注册表：每个服务实际运行的模型与配置
+#
+# 这里是"哪个模型在跑"的唯一事实来源。改这个文件意味着要出新镜像，
+# 与改代码走同一条发布链路（打 tag -> CI 构建 -> 改 cops 的 image tag）。
+#
+# 约定：
+# - revision 必须是不可变标识（HF 提交 sha、模型文件 sha256 或版本号），
+#   不要写分支名或可覆盖的 tag。
+# - 权重已在仓库内的小模型直接写 sha256；走 HuggingFace 的模型写 revision。
+# - 任何条目变更都要同步更新 services/<name>/tests/fixtures 的基线。
+
+services:
+  ocr:
+    task: ocr
+    runtime: rust-mnn
+    default_model: v6small
+    # 全部随镜像交付，运行时由 PRELOAD_MODELS 决定常驻哪一个
+    tiers:
+      - id: v6tiny
+        source: PP-OCRv6 tiny (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv6_tiny_det.mnn
+          rec: PP-OCRv6_tiny_rec.mnn
+          keys: ppocr_keys_v6_tiny.txt
+      - id: v6small
+        source: PP-OCRv6 small (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv6_small_det.mnn
+          rec: PP-OCRv6_small_rec.mnn
+          keys: ppocr_keys_v6_small.txt
+      - id: v5
+        source: PP-OCRv5 mobile (PaddleOCR -> MNN)
+        files:
+          det: PP-OCRv5_mobile_det.mnn
+          rec: PP-OCRv5_mobile_rec.mnn
+          keys: ppocr_keys_v5.txt
+    # 已知不可用：PP-OCRv6 medium 的 .mnn 在 MNN 中加载失败
+    # （Engine creation failed），上游工具同样失败，故不随镜像交付。
+    excluded:
+      - id: v6medium
+        reason: MNN model load fails with "Engine creation failed"; reproduced with upstream tooling
+    contract:
+      fixtures: services/ocr/tests/fixtures
+      baseline: services/ocr/tests/fixtures/baseline.json
+      min_similarity: 0.95
+
+  # 日志聚类：本服务没有神经网络权重，因此没有 tiers / files / sha256。
+  # "模型"是运行期累积出来的模板树，它的参数就是下面这个 profile，
+  # 状态的累积结果落在 STATE_DIR，不进镜像（进镜像的是算法与参数）。
+  logcluster:
+    task: log_template_mining
+    runtime: python-fastapi-drain3
+    default_model: default
+    weights: none
+    weights_reason: >-
+      Drain3 是无监督在线模板挖掘，没有训练好的权重文件；
+      "模型"由 profile 参数与运行期累积的模板树共同决定。
+    # 与 src/config.py 的默认值、tests/fixtures/baseline.json 的 profile 三处必须一致，
+    # 契约测试会断言这一点。
+    profile:
+      id: default
+      sim_th: 0.4
+      depth: 4
+      max_children: 100
+      mask_rules: []
+      parametrize_numeric: true
+      snapshot_compress: true
+    state:
+      # 累积状态。回滚镜像不会回滚它，格式变更必须升 STATE_SCHEMA_VERSION。
+      schema_version: 1
+      file: drain_state.json
+      dir_env: STATE_DIR
+      # 状态与 profile 不一致时服务拒绝加载（/readyz 503，且不覆盖旧状态）
+      profile_checked: true
+      atomic_write: true
+      replicas: 1
+      replicas_reason: 状态在本地卷里，扩容前必须先外置状态
+    excluded:
+      - id: masked-numeric
+        reason: >-
+          MASK_RULES=ip,uuid 配合 PARAMETRIZE_NUMERIC=false 是可用的组合，
+          但不是默认档：默认的数值参数化已经覆盖 IP/UUID/百分比，
+          额外规则只会让模板更早失去区分度（见 services/logcluster/README.md）
+    contract:
+      fixtures: services/logcluster/tests/fixtures
+      baseline: services/logcluster/tests/fixtures/baseline.json
+      # 聚类是确定性的，所以基线逐行精确比对，不需要相似度阈值
+      exact: true
+      # 基线里还有 drain3 版本与延迟预算两重校验
+      drain3_version_checked: true
+
+  # 判定服务：System One 风格的 typed decisions（choice / noul / score）。
+  # 权重体积（678 MB）超出 git 单文件上限，因此**不走仓库内交付**：
+  # 构建期按 revision 从 HuggingFace 取回并逐文件校验 sha256，
+  # 摘要写在 registry/jev-digests.json，服务启动时再校验一次才加载。
+  jev:
+    task: typed_decisions
+    runtime: python-fastapi-laya
+    default_model: multilingual
+    tiers:
+      - id: multilingual
+        source: Laya multilingual (mmBERT-base, 322M, 100+ languages)
+        repo: convaiinnovations/laya
+        subfolder: multilingual
+        # 不可变标识：该 subfolder 所属的仓库提交 sha
+        revision: 55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851
+        files:
+          - model.safetensors
+          - rl_agent_config.json
+          - tokenizer/tokenizer.json
+          - tokenizer/tokenizer_config.json
+          - encoder/config.json
+        bytes: 678200000
+        digest_manifest: registry/jev-digests.json
+      # 只带一个档位是有意的：Router 按脚本在 english 与 multilingual 之间切换，
+      # 两个都常驻会让内存翻倍（实测单档位 RSS 1.7 GB、加载峰值 2.3 GB），
+      # 而英文精度差异（MASSIVE intent 英文 0.783 对 0.657）在小规模用法下
+      # 换不回这份内存。
+    excluded:
+      - id: english
+        reason: >-
+          与 multilingual 同时常驻要 2.4 GB 以上（实测单档位峰值 2.3 GB），
+          而这个服务的判定都是短文本+少量选项，收益不支持这份内存。
+      - id: typed-decisions
+        reason: >-
+          该档位的精度来自在公开 typed-decisions 基准的训练集上微调，
+          与本仓库自己的样本分布不一致；要用它应当先在自己的样本上评测。
+    contract:
+      fixtures: services/jev/tests/fixtures
+      baseline: services/jev/tests/fixtures/baseline.json
+      # 判定是确定性的：同一份权重、同一组参数、同样的输入，选项 argmax 与概率稳定
+      # 复现（跨机器实测一致）；概率比对用 0.005 容差，因为线程数不同会让浮点末位变化。
+      argmax_exact: true
+      probability_tolerance: 0.005
+      # 基线里还有权重摘要、参数指纹与 p95 延迟预算三重校验。
+      # 400 ms 的依据：cloud3 上 4 线程单问 p95 实测 217 ms，只用来拦数量级退化。
+      digest_checked: true
+      latency_budget_ms: 400

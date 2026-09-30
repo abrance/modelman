@@ -1,0 +1,14 @@
+# 判定服务的运行期依赖。版本全部钉死：判定结果（选项概率与置信度）直接受
+# 权重与 transformers 版本影响，浮动版本会让契约基线失去意义。
+#
+# torch 不在这里：它由 Dockerfile 单独从 CPU 轮子镜像安装（见 services/jev/Dockerfile），
+# requirements 里再写一次会把带 CUDA 依赖的 PyPI 版本拉进来。
+laya==0.3.22
+transformers==5.17.0
+tokenizers==0.23.2
+huggingface_hub==1.33.0
+safetensors==0.8.0
+numpy==2.5.3
+fastapi==0.115.6
+pydantic==2.10.4
+uvicorn[standard]==0.32.1

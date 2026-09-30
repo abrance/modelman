@@ -35,9 +35,9 @@ cops（部署仓库）
 | 经镜像站拉取 | `ghcr.chenby.cn/abrance/modelman-<服务名>`（cloud2 用；cloud3 直连 `ghcr.io`） |
 | 平台 | `linux/amd64` |
 
-两个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
+四个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
 `https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`，
-`model-forecast` 入口 `https://forecast.xiaoyxq.top`。
+`model-forecast` 入口 `https://forecast.xiaoyxq.top`，`model-jev` 的入口由 cops 侧决定。
 主机的镜像源差异、端口与资源声明都在 cops 侧，本仓库不维护主机清单。
 
 ## 发布流程（一服务一份 workflow）
@@ -47,9 +47,31 @@ cops（部署仓库）
 | ocr | `ocr/vX.Y.Z` | 根 `Cargo.toml` 的 `version` | `release-ocr.yml` |
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
 | forecast | `forecast/vX.Y.Z` | `services/forecast/src/build_info.py` 的 `VERSION` | `release-forecast.yml` |
+| jev | `jev/vX.Y.Z` | `services/jev/src/build_info.py` 的 `VERSION` | `release-jev.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
+
+## 构建期取权重的服务：时序预测与判定的额外要求
+
+`model-ocr` 与 `model-logcluster` 的权重与代码都在仓库里。`model-forecast`（1.32 GB）
+与 `model-jev`（678 MB）都不是：体积超出公开仓库单文件上限，所以**构建期**按不可变
+revision 从 HuggingFace 取回、逐文件校验 sha256 后才烘进镜像（`docs/design.md` D18）。
+这带来三件部署侧要知道的事：
+
+1. **构建机必须能访问依赖与权重源。** GitHub 托管 runner 直连 `huggingface.co` 与
+   PyTorch 官方 CPU 索引即可；若某天不通，改对应 release workflow 的 `HF_ENDPOINT` /
+   `TORCH_SOURCE_ARGS` 即可，不用改 Dockerfile。**注意 torch 的两种源写法不同**：
+   官方索引是 PEP 503（`--index-url`），国内目录型镜像是 `--find-links`；也不要把国内源
+   写成唯一默认值，境外 runner 上会卡到 30 分钟超时。
+2. **资源限额必须给够。** 判定服务实测常驻 1.7 GB、加载峰值 2.3 GB，`limits` 给到 3Gi
+   以上，否则容器会在加载阶段被 OOM 杀掉；时序预测同类问题见
+   `services/forecast/README.md`。
+3. **推理线程数要显式设置。** 判定的 `INFER_THREADS` 建议 4：实测给满 16 线程时单问从
+   207 ms 涨到 2165 ms，共享 vCPU 上互相踩的代价比并行收益大一个数量级。取值依据见
+   `docs/jev.md`。
+
+两个服务都是无状态的，回滚与 OCR 一样只改 tag。
 
 ## 有状态服务：日志聚类的额外要求
 
@@ -76,12 +98,15 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 - **时序预测**：`/v1/forecast` 同样是 CPU 消耗型，单位成本高于 OCR（一次预测百毫秒
   量级，长上下文 × 大步长到秒级），上界是 `MAX_CONCURRENCY` 与 `QUEUE_TIMEOUT_SECS`；
 - **日志聚类**：`/cluster` 是**写**接口——被滥用是在模板树里埋数据，
-  而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）。
+  而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）；
+- **判定服务**：`/v1/systemone` 每次请求要吃 4 个核几百毫秒，被滥用同样是白烧 CPU，
+  上界与 OCR 同级；它的调用方（如 `pi-jev`）本来就带 `Authorization: Bearer` 头，
+  所以启用鉴权对调用侧是零改动。
 
 统一鉴权已定为方向（做在外层，`docs/roadmap.md` 中期），per-service 的
 `AUTH_TOKEN` 是"要收敛时够用"的停手方案：启用只改 cops 三处（deploy.yml 密钥映射、
 `app.conf` 的 `SECRET_ENV`/`REQUIRED_ENV`、主机上的密钥文件），**不需要改服务代码**；
-两个页面的 token 输入与请求头都已实现并有测试覆盖。
+两个页面的 token 输入与请求头都已实现并有测试覆盖，判定服务的页面（判定台）同样如此。
 
 ## 页面
 
@@ -90,6 +115,7 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 - **OCR**：拍照/传图 → 文字。设计与交互见 `docs/ocr-ui.md`。
 - **日志聚类**：贴日志 → 看模板。设计与交互见 `docs/logcluster-ui.md`。
 - **时序预测**：填/粘贴历史值 → 中位数点预测与 0.1–0.9 分位区间，可多序列多分位。
+- **判定服务**：填 state 与 questions → 看答案与选项概率分布（调阈值时用）。
 
 入口必须落在**域名根路径**（页面用绝对路径调 `/ocr`、`/cluster`，子路径式入口会
 打不开数据），并走 HTTPS（`navigator.clipboard` 只在安全上下文可用，OCR 页面的
@@ -108,6 +134,7 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 ```bash
 curl -s https://ocr.xiaoyxq.top/version
 curl -s https://logcluster.xiaoyxq.top/version
+curl -s https://jev.xiaoyxq.top/version      # 域名以 cops 侧为准
 ```
 
 `/version` 里的 `git_commit` 应与本次 cops 采用的镜像 tag 后缀一致。
