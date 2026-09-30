@@ -13,11 +13,13 @@
 | 服务契约端点 | 已上线 | `/` `/livez` `/healthz` `/readyz` `/version` `/models` `/metrics` `/ocr` `/ocr/batch` |
 | 访问日志 | 已上线 | `tower_http=debug`，形如 `finished processing request latency=28 ms status=200` |
 | 部署链路 | 已闭环 | tag → CI → GHCR → cops 改 tag → 按单元部署（cloud3 k3s：kubectl apply + rollout + 健康门禁） |
-| 资源限额 | 已生效 | k8s resources.limits：ocr 8 核/1500Mi、logcluster 1.5 核/256Mi（口径见 cops 侧 k8s.yaml） |
+| 资源限额 | 已生效 | k8s resources.limits：ocr 8 核/1500Mi、logcluster 1.5 核/256Mi、forecast 2 核/3Gi（口径见 cops 侧 k8s.yaml） |
 | 多服务构建与 CI | 已落地 | 根 `Makefile` 只做分派，命令在 `services/<name>/service.mk`；CI 按目录发现服务（`docs/design.md` D12） |
 | 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.1-4c4f4e1` 跑在 cloud3（k3s），入口 `https://logcluster.xiaoyxq.top`，模板树落在 PVC `model-logcluster-state`；`cops` 侧单元 `apps/model-logcluster` |
 | 日志聚类自带 Web 界面 | 已上线 | `GET /`：贴日志 → 看模板与本次变更，含只匹配、模板树面板、写入提示；三份静态资源随镜像交付，不启动新容器。设计见 `docs/logcluster-ui.md` |
 | OCR 自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。镜像 `v0.1.3-6476ffb` 跑在 cloud3（k3s），入口 `https://ocr.xiaoyxq.top` 按根路径转发；真浏览器验收 19/19 是打线上入口跑的。设计见 `docs/ocr-ui.md` |
+| 时序预测服务（TimesFM 3.0，330M 参数，PyTorch CPU，Python + FastAPI） | 已上线 | `services/forecast`；镜像 `v0.1.0-de7e751`（digest `sha256:010d180e…`）跑在 cloud3（k3s），入口 `https://forecast.xiaoyxq.top`；`cops` 侧单元 `apps/model-forecast` |
+| 时序预测自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：填或粘贴历史值 → 看中位数点预测与 0.1–0.9 分位区间，可多序列、多分位；三份静态资源随镜像交付，不启动新容器 |
 
 实测指标（口径：预热后 + 20 次真实请求后的稳态 RSS）：单档约 74 MB、两档约 95 MB；
 `v6small` p50 6.5 ms、p95 16.9 ms（本机），云主机端到端 28–54 ms；
@@ -29,38 +31,47 @@
 
 ### 一、对外开放的鉴权口径（已定，不再是"下一步"）
 
-**口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），两个服务的入口都
+**口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），已上线服务的入口都
 已公网可达。统一鉴权在外层做（见中期表），届时重新评估服务侧 `AUTH_TOKEN` 的去留；
 要提前收敛，cops 三处即可，见 `docs/deployment.md`。
 
-### 二、资源规划决策（决定后续所有工作量）
+### 二、资源规划决策（已定：升配主机，不做量化）
 
-目标主机只有约 2 GiB 空闲内存。各服务的估算占用：
+原判断是「目标主机只有约 2 GiB 空闲内存，OCR + 时序预测的 fp32 组合装不下」，三条候选
+路径里选的是**路径 3：主机升配**，另外两条（只上轻量服务、时序预测走 ONNX int8）都不做。
 
-| 服务 | fp32 / PyTorch 估算 | 量化后估算 |
-|---|---|---|
-| OCR（已上线） | 约 74 MB 稳态（两档约 95 MB） | 不适用 |
-| 时序预测（Chronos-2 / TimesFM 2.5 一类，约 200M 参数） | 1.0–1.3 GB | 300–500 MB（ONNX int8） |
-| 日志聚类（Drain3，纯 Python，无神经网络） | 40 MiB 起步（实测 11 个模板），随模板树增长 | 不适用 |
+- 升配顺带解掉一个更硬的阻塞：换型前 cloud3 是 QEMU 虚拟 CPU，只有 SSE2，
+  `import torch` 直接 SIGILL——这一条量化救不了，只能换型。
+- 换型后 16 vCPU（Xeon Gold 6133）/ 16 GiB，`x86-64-v4`。
+- 不做量化的依据是实测数字而不是估算：TimesFM 3.0 的 fp32 常驻约 1.4 GiB、
+  加载峰值约 2.8 GB、单次预测中位 95 ms，k8s 内存上限给 3Gi 就够；
+  在这个余量下，ONNX int8 的导出与精度回归换不回对应的收益。
+- 口径提醒：cops 各单元只写 `limits` 时 k8s 把 request 记成同一个值，16 核会被记掉
+  14.7 核；forecast 显式写了 `requests: cpu 500m / memory 1Gi`，`limits: cpu 2 / memory 3Gi`。
 
-OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
+### 三、时序预测服务（已上线）
 
-1. 只上轻量服务（日志聚类、OCR），时序预测另找主机。
-2. 时序预测走 ONNX int8 量化（需额外做一遍导出与精度验证）。
-3. 目标主机升配内存。
-
-**需要先做这个决策，再决定时序预测服务的实现方式**，否则会在实现到一半时被迫返工。
-
-### 三、时序预测服务
-
-- 候选模型：Chronos-2、TimesFM 2.5、Moirai、IBM Granite TTM（体积小、速度快）。
-- 上游权重是 HuggingFace 格式，用 `revision`（提交 sha）锁定，不走分支名或可覆盖 tag。
-- 权重按决策二选择承载方式：随镜像交付（体积可控时）或走独立的权重镜像层。
-- 技术栈为 Python，与 OCR 的 Rust 栈并存，但接口契约、镜像标签、契约测试与 OCR 一致。
-- 端口 `9102`。
-
-接口契约的一个额外要求：预测类输出需要声明形状与分位数语义，契约测试里除了文本相似度，
-应改为断言输出形状、分位数单调性与数值容差。
+- 代码在 `services/forecast/`：TimesFM 3.0（330M 参数）的 PyTorch CPU 前向，FastAPI 提供
+  服务，`registry/forecast.yaml` 登记档位、revision 与许可证，
+  `registry/forecast-digests.json` 登记逐文件 sha256。
+- 选它而不是候选清单里其它模型，是因为它**直接输出分位**（0.1…0.9 九档）：接口上
+  「一组数组 = 一个分位」，省掉「先采样再数分位」那一层。`point` 恒等于
+  `quantiles["0.5"]`；契约测试断言输出形状、分位单调性与数值容差，不只比文本。
+- **权重不进仓库**（1.32 GB，超过仓库 100 MB 的单文件上限）：构建期按不可变 `revision`
+  取回并逐文件校验 sha256，运行期 `local_files_only`，不联网。取回走 `HF_ENDPOINT`
+  （构建期用镜像站），并强制 `HF_HUB_DISABLE_XET=1`——xet 走镜像站必 401。
+- **上下文截尾而不是报错**：序列长于 `MAX_CONTEXT` 时取最后一段，响应里 `truncated=true`
+  并有指标计数；模型全局上下文上限是 15360，默认收到 4096。超步长、超序列数、
+  不认识的分位一律 400 并带可读原因。
+- 只常驻一个档位（3.0 与 2.5 同驻要双份内存），也不做结果缓存
+  （缓存键要含整段上下文与步长，真实用法命中率低）。
+- 端口 `9102`（容器内 8080）；镜像 `v0.1.0-de7e751`，`cops` 单元 `apps/model-forecast`，
+  入口 `https://forecast.xiaoyxq.top`。发布与部署都是首探即过。
+- 冷节点首次部署要给足等待：拉 2.5 GB 镜像约 5 分钟，而 `kubectl rollout status`
+  从 apply 那一刻就计时，所以单元里 `HEALTH_TIMEOUT=900` 而不是默认的 180。
+- **许可证**：代码 Apache-2.0，权重是 `timesfm-non-commercial-license-v1.0`（非商业）。
+  自用与评估可以，商业与生产不行；要走到商业那一步就换整档权重（TimesFM 2.5 是
+  Apache-2.0）。这一条写在 `registry/forecast.yaml` 的 `license` 段里。
 
 ### 四、日志聚类服务（已上线）
 
@@ -104,11 +115,11 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 | 项 | 说明 | 触发条件 |
 |---|---|---|
 | 访问日志提到 INFO | 现在每个请求两行 DEBUG（`on_request` + `on_response`）。改成一条 INFO 级别需要改代码并发新版本，收益是日志量减半、级别语义更准 | 日志量成为问题，或下一次因其它原因发版时一并做 |
-| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。日志聚类的代码已按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对 Python 服务是空操作 | 出现第二个 Python 服务时把 `ruff check` / `ruff format --check` 接进 CI |
+| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。两个 Python 服务（logcluster、forecast）的代码都按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对它们仍是空操作 | 触发条件已满足（logcluster、forecast 都是 Python 服务），待排期把 `ruff check` / `ruff format --check` 接进 CI |
 | 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 已经有第二个服务了，但两者的重依赖不重叠（Rust 侧是静态二进制 + debian-slim，Python 侧是 pip 装 drain3 + python-slim），抽基础层只是把同一个 slim 换个地方放。等出现第二个把 torch / transformers / ONNX Runtime 烘进镜像的服务再做 |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
-| 统一鉴权 | 现在两个服务都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
-| 指标接入抓取 | 两个服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
+| 统一鉴权 | 现在 ocr / logcluster / forecast 都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
+| 指标接入抓取 | 各服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
 | 镜像体积优化 | 当前 133 MB，主要是模型（39 MB）与运行时基础层 | 拉取时间成为瓶颈时 |
 | 批量接口背压 | `/ocr/batch` 目前逐个串行处理，超长批次会长时间占用一个并发槽位 | 出现大批量调用方时 |
 | OCR 是否开启 `MAX_SIDE` | 现在为 `0`（不缩放），解码位图只靠代码里 512 MiB 那道闸兜住。开启（如 `1920`）能压掉大图的内存峰值，代价是超大截图上的小字识别率可能下降 | 内存告警、出现 OOM 重启，或大尺寸截图成为主要输入时 |
@@ -126,6 +137,5 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 
 | 问题 | 影响 | 建议的决策时机 |
 |---|---|---|
-| 目标主机是否升配内存 | 决定时序预测服务能否与 OCR 同机，以及是走量化还是升配 | 启动时序预测实现之前 |
 | 何时把本仓库拆多仓库 | 若技术栈分化为多条互不共享代码/CI 的流水线，或单个服务需要独立的发布节奏与权限隔离 | 出现上述信号时，而不是提前拆分 |
 | 契约测试样本集如何扩充 | 现在的 20 张样本覆盖窄，仅能拦住"比基线更差" | 有真实业务样本时持续补充，扩充后必须重新生成并 review 基线 |
