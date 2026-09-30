@@ -18,6 +18,7 @@
 | 日志聚类服务（Drain3 + FastAPI，Python） | 已上线 | `services/logcluster`；镜像 `v0.1.1-4c4f4e1` 跑在 cloud3（k3s），入口 `https://logcluster.xiaoyxq.top`，模板树落在 PVC `model-logcluster-state`；`cops` 侧单元 `apps/model-logcluster` |
 | 日志聚类自带 Web 界面 | 已上线 | `GET /`：贴日志 → 看模板与本次变更，含只匹配、模板树面板、写入提示；三份静态资源随镜像交付，不启动新容器。设计见 `docs/logcluster-ui.md` |
 | OCR 自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：点选/拖入/粘贴/手机拍照 → 文字，含档位选择、位置框、批量、历史与导出；三份静态资源编译期嵌入二进制，不新增依赖与部署单元。镜像 `v0.1.3-6476ffb` 跑在 cloud3（k3s），入口 `https://ocr.xiaoyxq.top` 按根路径转发；真浏览器验收 19/19 是打线上入口跑的。设计见 `docs/ocr-ui.md` |
+| 判定服务（System One 风格 typed decisions） | 已实现，待发布 | `services/jev`：`POST /v1/systemone` 与 TypeSafe Jev 同形状，一次前向出 choice/noul/score 全部答案与概率；权重 678 MB 不进仓库，构建期按 revision 取回并逐文件校验 sha256（D18）。实测（cloud3 Xeon 6133）：加载 9.7 s、常驻 1.7 GB、峰值 2.3 GB、单问 207 ms、三问 890 ms（4 线程）。设计与精度边界见 `docs/jev.md` |
 
 实测指标（口径：预热后 + 20 次真实请求后的稳态 RSS）：单档约 74 MB、两档约 95 MB；
 `v6small` p50 6.5 ms、p95 16.9 ms（本机），云主机端到端 28–54 ms；
@@ -29,27 +30,24 @@
 
 ### 一、对外开放的鉴权口径（已定，不再是"下一步"）
 
-**口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），两个服务的入口都
-已公网可达。统一鉴权在外层做（见中期表），届时重新评估服务侧 `AUTH_TOKEN` 的去留；
-要提前收敛，cops 三处即可，见 `docs/deployment.md`。
+**口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），三个服务的入口都
+已公网可达（判定服务的入口待发布）。统一鉴权在外层做（见中期表），届时重新评估
+服务侧 `AUTH_TOKEN` 的去留；要提前收敛，cops 三处即可，见 `docs/deployment.md`。
 
-### 二、资源规划决策（决定后续所有工作量）
+### 二、资源规划决策（已不再是阻塞项）
 
-目标主机只有约 2 GiB 空闲内存。各服务的估算占用：
+这一节原本的前提是"目标主机只有约 2 GiB 空闲内存"，并据此要在"只上轻量服务 /
+量化 / 升配"之间做选择。现在前提变了：cloud3 是 16 GB 内存、16 vCPU（无 GPU），
+判定服务实测常驻 1.7 GB、峰值 2.3 GB，已经在同一台机器上跑通基准。
 
-| 服务 | fp32 / PyTorch 估算 | 量化后估算 |
+| 服务 | 实测占用 | 备注 |
 |---|---|---|
-| OCR（已上线） | 约 74 MB 稳态（两档约 95 MB） | 不适用 |
-| 时序预测（Chronos-2 / TimesFM 2.5 一类，约 200M 参数） | 1.0–1.3 GB | 300–500 MB（ONNX int8） |
-| 日志聚类（Drain3，纯 Python，无神经网络） | 40 MiB 起步（实测 11 个模板），随模板树增长 | 不适用 |
+| OCR | 约 74 MB 稳态（两档约 95 MB） | 单档 p50 6.5 ms |
+| 日志聚类（Drain3，无神经网络） | 40 MiB 起步，随模板树增长 | 24 行聚类 7–12 ms |
+| 判定服务 | 1.70 GB 稳态 / 2.30 GB 峰值 | 单问 207 ms、三问 890 ms（4 线程，cloud3） |
 
-OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
-
-1. 只上轻量服务（日志聚类、OCR），时序预测另找主机。
-2. 时序预测走 ONNX int8 量化（需额外做一遍导出与精度验证）。
-3. 目标主机升配内存。
-
-**需要先做这个决策，再决定时序预测服务的实现方式**，否则会在实现到一半时被迫返工。
+仍然适用的结论：把 fp32 的大模型直接堆上单主机依旧不划算，时序预测一类仍应先考虑
+量化（ONNX int8）；判定服务已经吃掉了 1.7 GB，再加一个同等量级的服务就该另议主机。
 
 ### 三、时序预测服务
 
@@ -99,16 +97,32 @@ OCR + 时序预测的 fp32 组合已超过可用内存。三条路径：
 - 沿用 OCR 那套资源约束：客户端按 `/version` 报的 `MAX_LINES` / `MAX_LINE_CHARS` /
   `MAX_BYTES` 先算一遍，超了直接禁用按钮；服务端那三道仍是最终闸门。
 
+### 六、判定服务（已实现，待发布）
+
+- 代码在 `services/jev/`：内嵌 Laya（`laya==0.3.22` + transformers）作库，对外同时提供
+  契约端点与 `POST /v1/systemone`。选型与落选理由见 `docs/jev.md`。
+- **权重不进仓库**：678 MB 超出公开仓库单文件上限，改为构建期按 revision 取回、
+  逐文件校验 sha256，服务启动时再校验一次才加载（D18）。摘要的唯一事实来源是
+  `registry/jev-digests.json`，契约测试会断言基线与它一致。
+- **只交付 `multilingual` 一个档位**（D19）：英文档位与公开基准微调档位都不带，
+  理由与代价写在 `registry/jev.yaml` 的 `excluded` 里。
+- 实测（cloud3，Xeon Gold 6133 16 vCPU）：加载 9.7 s、常驻 1.70 GB、峰值 2.30 GB、
+  单问 207 ms、三问 890 ms（`INFER_THREADS=4`）。内存是主要成本，CPU 是突发占用。
+- **精度边界**：门禁式二值判定方向可靠（0.934 对 0.309），但 5 选项的细粒度工具路由
+  自测 6 例只对 4 例，因此不能按默认阈值直接当成无人值守的自动激活依据。
+- 部署侧要注意：`limits` 给到 3Gi（低于 2.3 GB 会在加载阶段被 OOM），
+  `INFER_THREADS` 显式设置（实测 16 线程时单问从 207 ms 涨到 2165 ms）。
+
 ## 中期
 
 | 项 | 说明 | 触发条件 |
 |---|---|---|
 | 访问日志提到 INFO | 现在每个请求两行 DEBUG（`on_request` + `on_response`）。改成一条 INFO 级别需要改代码并发新版本，收益是日志量减半、级别语义更准 | 日志量成为问题，或下一次因其它原因发版时一并做 |
-| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。日志聚类的代码已按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对 Python 服务是空操作 | 出现第二个 Python 服务时把 `ruff check` / `ruff format --check` 接进 CI |
-| 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | 已经有第二个服务了，但两者的重依赖不重叠（Rust 侧是静态二进制 + debian-slim，Python 侧是 pip 装 drain3 + python-slim），抽基础层只是把同一个 slim 换个地方放。等出现第二个把 torch / transformers / ONNX Runtime 烘进镜像的服务再做 |
+| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。两个 Python 服务（日志聚类、判定服务）的代码已按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对它们是空操作 | **触发条件已满足**（已出现第二个 Python 服务）。下一步：把 `ruff check` / `ruff format --check` 接进 CI 的 lint job |
+| 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | **触发条件已满足**：判定服务已把 torch（184 MB 轮子）+ transformers 烘进镜像（`services/jev/Dockerfile`）。再做下一个同技术栈的服务时应先抽基础层，否则两个镜像各背一份 torch |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
-| 统一鉴权 | 现在两个服务都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
-| 指标接入抓取 | 两个服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
+| 统一鉴权 | 现在三个服务都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
+| 指标接入抓取 | 三个服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
 | 镜像体积优化 | 当前 133 MB，主要是模型（39 MB）与运行时基础层 | 拉取时间成为瓶颈时 |
 | 批量接口背压 | `/ocr/batch` 目前逐个串行处理，超长批次会长时间占用一个并发槽位 | 出现大批量调用方时 |
 | OCR 是否开启 `MAX_SIDE` | 现在为 `0`（不缩放），解码位图只靠代码里 512 MiB 那道闸兜住。开启（如 `1920`）能压掉大图的内存峰值，代价是超大截图上的小字识别率可能下降 | 内存告警、出现 OOM 重启，或大尺寸截图成为主要输入时 |

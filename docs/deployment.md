@@ -35,8 +35,9 @@ cops（部署仓库）
 | 经镜像站拉取 | `ghcr.chenby.cn/abrance/modelman-<服务名>`（cloud2 用；cloud3 直连 `ghcr.io`） |
 | 平台 | `linux/amd64` |
 
-两个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
-`https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`。
+三个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
+`https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`，
+`model-jev` 的入口由 cops 侧决定。
 主机的镜像源差异、端口与资源声明都在 cops 侧，本仓库不维护主机清单。
 
 ## 发布流程（一服务一份 workflow）
@@ -45,9 +46,24 @@ cops（部署仓库）
 |---|---|---|---|
 | ocr | `ocr/vX.Y.Z` | 根 `Cargo.toml` 的 `version` | `release-ocr.yml` |
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
+| jev | `jev/vX.Y.Z` | `services/jev/src/build_info.py` 的 `VERSION` | `release-jev.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
+
+## 构建期取权重的服务：判定的额外要求
+
+`model-ocr` 与 `model-logcluster` 的权重与代码都在仓库里。`model-jev` 不是：
+它的权重是 678 MB，超出公开仓库单文件上限，所以**构建期**从 HuggingFace 取回、
+逐文件校验 sha256 后才烘进镜像（`docs/design.md` D18）。这带来两件部署侧要知道的事：
+
+1. **构建机必须能访问权重源。** GitHub 托管 runner 直连 `huggingface.co` 即可；
+   若某天不通，把 `release-jev.yml` 的 `HF_ENDPOINT` 换成镜像源即可，不用改 Dockerfile。
+2. **资源限额必须给够。** 实测常驻 1.7 GB、加载峰值 2.3 GB，`limits` 给到 3Gi 以上，
+   否则容器会在加载阶段被 OOM 杀掉；`INFER_THREADS` 要显式设置（建议 4），
+   给满核数反而慢一个数量级。取值依据见 `docs/jev.md`。
+
+服务本身是无状态的，回滚与 OCR 一样只改 tag。
 
 ## 有状态服务：日志聚类的额外要求
 
@@ -66,25 +82,29 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 
 ## 暴露方式
 
-**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。两个服务都实现了
-`AUTH_TOKEN` 但未启用。代价两个服务不同，这是当时单独写 D16 的原因：
+**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。三个服务都实现了
+`AUTH_TOKEN` 但未启用。代价各不同，这是当时单独写 D16 的原因：
 
 - **OCR**：`/ocr` 是纯 CPU 消耗型接口，被滥用的表现是并发额度被占满，
   上界（`MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS`）保证对方拿到 503 而不是主机过载；
 - **日志聚类**：`/cluster` 是**写**接口——被滥用是在模板树里埋数据，
-  而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）。
+  而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）；
+- **判定服务**：`/v1/systemone` 每次请求要吃 4 个核几百毫秒，被滥用同样是白烧 CPU，
+  上界与 OCR 同级；它的调用方（如 `pi-jev`）本来就带 `Authorization: Bearer` 头，
+  所以启用鉴权对调用侧是零改动。
 
 统一鉴权已定为方向（做在外层，`docs/roadmap.md` 中期），per-service 的
 `AUTH_TOKEN` 是"要收敛时够用"的停手方案：启用只改 cops 三处（deploy.yml 密钥映射、
 `app.conf` 的 `SECRET_ENV`/`REQUIRED_ENV`、主机上的密钥文件），**不需要改服务代码**；
-两个页面的 token 输入与请求头都已实现并有测试覆盖。
+两个页面的 token 输入与请求头都已实现并有测试覆盖，判定服务的页面（判定台）同样如此。
 
 ## 页面
 
-两个服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
+三个服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
 
 - **OCR**：拍照/传图 → 文字。设计与交互见 `docs/ocr-ui.md`。
 - **日志聚类**：贴日志 → 看模板。设计与交互见 `docs/logcluster-ui.md`。
+- **判定服务**：填 state 与 questions → 看答案与选项概率分布（调阈值时用）。
 
 入口必须落在**域名根路径**（页面用绝对路径调 `/ocr`、`/cluster`，子路径式入口会
 打不开数据），并走 HTTPS（`navigator.clipboard` 只在安全上下文可用，OCR 页面的
@@ -103,6 +123,7 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 ```bash
 curl -s https://ocr.xiaoyxq.top/version
 curl -s https://logcluster.xiaoyxq.top/version
+curl -s https://jev.xiaoyxq.top/version      # 域名以 cops 侧为准
 ```
 
 `/version` 里的 `git_commit` 应与本次 cops 采用的镜像 tag 后缀一致。

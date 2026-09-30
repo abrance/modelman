@@ -1,0 +1,4 @@
+# 测试与契约基线生成用的依赖，不进镜像。
+-r requirements.txt
+httpx==0.28.1
+pytest==8.3.4

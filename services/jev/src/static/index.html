@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>modelman-jev 判定台</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <h1>modelman-jev</h1>
+  <p class="sub">自托管 System One 判定服务：typed choice / noul / score，单次前向出全部答案。</p>
+  <dl class="status" id="status">
+    <div><dt>livez</dt><dd id="s-livez">…</dd></div>
+    <div><dt>readyz</dt><dd id="s-readyz">…</dd></div>
+    <div><dt>档位</dt><dd id="s-tier">…</dd></div>
+    <div><dt>加载耗时</dt><dd id="s-load">…</dd></div>
+  </dl>
+</header>
+
+<main>
+  <section class="panel">
+    <label for="token">AUTH_TOKEN<span class="hint">服务未启用鉴权时留空</span></label>
+    <input id="token" type="password" autocomplete="off" placeholder="Bearer token">
+
+    <label for="state">state<span class="hint">字符串、JSON 对象或对话轮次数组</span></label>
+    <textarea id="state" rows="6" spellcheck="false"></textarea>
+
+    <label for="questions">questions<span class="hint">Jev 问题 schema</span></label>
+    <textarea id="questions" rows="12" spellcheck="false"></textarea>
+
+    <div class="row">
+      <button id="run" type="button">判定</button>
+      <button id="reset" type="button" class="ghost">恢复示例</button>
+      <span id="timing" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>结果</h2>
+    <p id="error" class="error" hidden></p>
+    <div id="answers"></div>
+    <pre id="usage" class="usage" hidden></pre>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

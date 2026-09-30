@@ -14,11 +14,12 @@
 | Rust 2021 + cargo workspace | 服务实现 |
 | axum | HTTP 服务框架 |
 | MNN（经 ocr-rs） | 小模型 CPU 推理 |
+| Python + FastAPI + transformers | 文本类与无权重服务（日志聚类、判定服务） |
 | Docker + GHCR | 交付 |
 | GitHub Actions | 构建、测试、发布 |
 
-Python 服务（日志聚类、时序预测一类）也放在 `services/<name>/` 下，与 Rust 服务同级，
-各自带 `Dockerfile`，不加入 cargo workspace。参考实现见 `services/logcluster`。
+Python 服务（日志聚类、判定服务、时序预测一类）也放在 `services/<name>/` 下，与 Rust 服务同级，
+各自带 `Dockerfile`，不加入 cargo workspace。参考实现见 `services/logcluster` 与 `services/jev`。
 
 ## 目录约定
 
@@ -48,7 +49,7 @@ docs/                设计、规划、架构约定、扩展与部署说明
 
 ## 服务接口约定
 
-所有服务必须实现 `GET /`（服务落点，两个服务都返回自带页面）、`/livez`、`/healthz`、
+所有服务必须实现 `GET /`（服务落点，都返回自带页面）、`/livez`、`/healthz`、
 `/readyz`、`/version`、`/models`、`/metrics`（需鉴权），以及各自的业务端点；
 错误响应必须带可读的 `error` 字段。
 
@@ -74,10 +75,14 @@ CI 按 `services/*/service.mk` 发现服务，所以新增服务不必改 Makefi
 
 ## 模型相关规则
 
-1. **权重与代码同仓库、同镜像**。小模型（几十 MB 以内）直接随镜像交付，
+1. **权重与代码同仓、同镜像**。小模型（几十 MB 以内）直接随镜像交付，
    换模型不需要重建环境，也不需要运行时联网下载。
-2. **构建期不得依赖 HuggingFace 拉取权重**。CI 需要访问外网下载 MNN 预编译归档，
-   但模型文件本身必须来自仓库。
+2. **权重超出仓库可承载的体积时，改为构建期按不可变 revision 取回并校验摘要**。
+   公开仓库单文件上限 100 MB，超过它的权重（如判定服务的 678 MB）不得提交；
+   此时要求在 `registry/<name>.yaml` 记 revision、在 `registry/<name>-digests.json`
+   记逐文件 sha256，构建期取回时逐个校验、启动时再校验一次才加载。
+   CI 需要的其他外网访问（MNN 预编译归档、权重取回）只允许发生在构建期，
+   运行期一律不得下载。
 3. **`registry/<name>.yaml` 是"哪个模型在跑"的唯一事实来源**。改模型必须同步改它，
    并重新生成契约测试基线。
 4. **模型变更必须重新生成并 review 契约测试基线**，差异要能解释。
@@ -87,6 +92,8 @@ CI 按 `services/*/service.mk` 发现服务，所以新增服务不必改 Makefi
    `weights: none` 并说明原因（例如日志聚类用的 Drain3 没有训练好的权重），
    同时登记它的参数组合与运行期状态的格式。运行期状态不属于镜像，
    回滚镜像不会回滚它，详见 `docs/deployment.md`。
+7. **摘要清单是这类权重的唯一事实来源**。文件缺失或摘要不符就是失败，不要做成
+   警告后继续；契约测试要断言基线与清单里的 revision、摘要完全一致。
 
 ## 推理相关规则
 
@@ -101,7 +108,7 @@ CI 按 `services/*/service.mk` 发现服务，所以新增服务不必改 Makefi
 
 ## 安全与隐私
 
-1. 服务不带账号体系；能否被公网访问由部署仓库（`cops`）决定，当前两个服务的入口
+1. 服务不带账号体系；能否被公网访问由部署仓库（`cops`）决定，当前三个服务的入口
    都公网可达且未启用 `AUTH_TOKEN`（`docs/design.md` D15–D17，统一鉴权另行做）。
 2. 契约测试样本来自真实截图，含真实昵称等个人信息。本仓库是公开仓库，
    新增样本前先确认是否可以公开；如需替换，用等结构、等字体特征的重绘图。

@@ -1,0 +1,13 @@
+{
+  "_comment": "services/jev 交付的 multilingual 档位权重摘要。由 tools/fetch_weights.py 在构建期校验，服务启动时也用它做加载前校验（Laya 的 expected_sha256）。改权重必须同步改这个文件与 registry/jev.yaml 的 revision，并重新生成契约基线。",
+  "repo": "convaiinnovations/laya",
+  "subfolder": "multilingual",
+  "revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+  "files": {
+    "model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+    "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+    "tokenizer/tokenizer.json": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+    "tokenizer/tokenizer_config.json": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1",
+    "encoder/config.json": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4"
+  }
+}
