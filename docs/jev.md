@@ -96,6 +96,13 @@ cloud3 最初的 vCPU 是 QEMU 老基线（`QEMU Virtual CPU version 2.5+`，36 
 而 cloud3 与 GitHub 托管 runner 相反，直连可用（实测 10 MB/s）而镜像源返回跳转。
 取权重的源因此是个构建参数（`HF_ENDPOINT`），不是写死的常量。
 
+torch 的 CPU 轮子同理，而且这里还有一段事故记录：一开始把阿里云的目录型镜像
+（`pytorch-wheels`）写成唯一源，本机能用，但 GitHub 托管 runner 拉它极慢，
+CI 在 `make test` 的依赖安装上卡满 30 分钟超时，而 `--quiet` 把进度也盖住了，
+日志里只能看到一条命令行。教训是两面的：默认值要选 CI 能过的那个（本地卡住几秒
+就能看出，CI 卡住要等满超时），以及不要为了静默而丢掉进度输出。
+现在 `TORCH_INDEX` 与 `HF_ENDPOINT` 都是可覆盖变量，默认值面向 CI 与 cloud3。
+
 ## 精度：这个服务能做什么、不能做什么
 
 这是必须写清楚的部分。multilingual 档位是 mmBERT-base 上的校准决策模型，它

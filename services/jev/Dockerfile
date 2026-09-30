@@ -16,13 +16,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# torch 单独装 CPU 轮子。PyPI 上的 linux 轮子会连带拉进整套 CUDA 依赖，
-# 体积从 184 MB 涨到 GB 级，而这里只用 CPU 前向。
-# 走阿里云镜像而不是 pytorch.org 的 CPU index：后者在本网络下会报
-# 「THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE」。
+# 默认用 PyTorch 官方 CPU 索引（标准 PEP 503，GitHub 托管 runner 拉它很快）。
+# 国内网络下官方索引会报 hash 校验失败，改用阿里云的目录型镜像，或直接用
+# 阿里云 pytorch-wheels 镜像，**不要**把镜像源写成唯一路径：
+# CI 卡在依赖安装上要等满 30 分钟超时才报错。
+#
+# 权重取回的源同理，HF_ENDPOINT 是可换的（本机直连 huggingface.co 常常不通）。
 COPY services/jev/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir "torch==2.9.1+cpu" \
-        -f https://mirrors.aliyun.com/pytorch-wheels/cpu/ \
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir "torch==2.9.1+cpu" -f "${TORCH_INDEX}" \
  && pip install --no-cache-dir -r /app/requirements.txt
 
 COPY services/jev/src /app/src
@@ -31,7 +33,7 @@ COPY registry/jev-digests.json /app/jev-digests.json
 
 # 权重取回。HF_ENDPOINT 可换成镜像源（国内网络直连 huggingface.co 常常不通）；
 # MODEL_REVISION 只用于文档与自检，真正的版本由 digests 文件里的 revision 决定。
-ARG HF_ENDPOINT=https://hf-mirror.com
+ARG HF_ENDPOINT=https://huggingface.co
 ARG MODEL_TIER=multilingual
 RUN python /app/tools/fetch_weights.py \
         --tier "${MODEL_TIER}" \

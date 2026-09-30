@@ -9,10 +9,19 @@ PYTHON ?= python3
 VENV := $(CURDIR)/$(SERVICE_DIR)/.venv
 PY   := $(VENV)/bin/python
 
-# torch 走 CPU 轮子镜像单独装：PyPI 上的 linux 轮子会连带拉进 CUDA 依赖，
-# 镜像体积与构建时间都翻几倍。版本与 Dockerfile 保持一致。
-TORCH_INDEX := https://mirrors.aliyun.com/pytorch-wheels/cpu/
+# torch 单独装 CPU 轮子：PyPI 上的 linux 轮子会连带拉进整套 CUDA 依赖，
+# 镜像体积与构建时间都翻几倍。
+#
+# 默认用 PyTorch 官方 CPU 索引：它是标准的 PEP 503 索引，GitHub 托管 runner
+# 拉它很快。国内网络下官方索引会报 hash 校验失败，改阿里云的目录型镜像：
+#   make build SERVICE=jev TORCH_INDEX=https://mirrors.aliyun.com/pytorch-wheels/cpu/
+# 默认值必须选“CI 能过”的那个：卡在依赖安装上的失败要先在本地重现，而 CI
+# 一旦卡住要等满 30 分钟才报错。
+TORCH_INDEX ?= https://download.pytorch.org/whl/cpu
 TORCH_VERSION := 2.9.1+cpu
+
+# 权重取回的源，同样是环境可覆盖的（cloud3 直连 HF，本机多数时候要走镜像）
+HF_ENDPOINT ?= https://huggingface.co
 
 # Python 没有"编译产物"，构建这一步的含义是把钉死版本的依赖装进 venv，
 # 并把权重取回本地——契约测试会真实加载模型，没有权重就只能整组跳过。
@@ -23,7 +32,8 @@ SERVICE_BUILD = \
 	$(PY) -m pip install --quiet --disable-pip-version-check \
 		-r $(SERVICE_DIR)/requirements-dev.txt && \
 	$(PY) $(SERVICE_DIR)/tools/fetch_weights.py \
-		--digests registry/jev-digests.json --out $(SERVICE_DIR)/models
+		--digests registry/jev-digests.json --out $(SERVICE_DIR)/models \
+		--endpoint $(HF_ENDPOINT)
 
 SERVICE_TEST = cd $(SERVICE_DIR) && $(PY) -m pytest
 
