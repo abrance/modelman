@@ -36,7 +36,8 @@ cops（部署仓库）
 | 平台 | `linux/amd64` |
 
 两个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
-`https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`。
+`https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`，
+`model-forecast` 入口 `https://forecast.xiaoyxq.top`。
 主机的镜像源差异、端口与资源声明都在 cops 侧，本仓库不维护主机清单。
 
 ## 发布流程（一服务一份 workflow）
@@ -45,6 +46,7 @@ cops（部署仓库）
 |---|---|---|---|
 | ocr | `ocr/vX.Y.Z` | 根 `Cargo.toml` 的 `version` | `release-ocr.yml` |
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
+| forecast | `forecast/vX.Y.Z` | `services/forecast/src/build_info.py` 的 `VERSION` | `release-forecast.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
@@ -66,11 +68,13 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 
 ## 暴露方式
 
-**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。两个服务都实现了
-`AUTH_TOKEN` 但未启用。代价两个服务不同，这是当时单独写 D16 的原因：
+**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。各服务都实现了
+`AUTH_TOKEN` 但未启用。代价因服务而异，这是当时单独写 D16 的原因：
 
 - **OCR**：`/ocr` 是纯 CPU 消耗型接口，被滥用的表现是并发额度被占满，
   上界（`MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS`）保证对方拿到 503 而不是主机过载；
+- **时序预测**：`/v1/forecast` 同样是 CPU 消耗型，单位成本高于 OCR（一次预测百毫秒
+  量级，长上下文 × 大步长到秒级），上界是 `MAX_CONCURRENCY` 与 `QUEUE_TIMEOUT_SECS`；
 - **日志聚类**：`/cluster` 是**写**接口——被滥用是在模板树里埋数据，
   而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）。
 
@@ -81,10 +85,11 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 
 ## 页面
 
-两个服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
+各服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
 
 - **OCR**：拍照/传图 → 文字。设计与交互见 `docs/ocr-ui.md`。
 - **日志聚类**：贴日志 → 看模板。设计与交互见 `docs/logcluster-ui.md`。
+- **时序预测**：填/粘贴历史值 → 中位数点预测与 0.1–0.9 分位区间，可多序列多分位。
 
 入口必须落在**域名根路径**（页面用绝对路径调 `/ocr`、`/cluster`，子路径式入口会
 打不开数据），并走 HTTPS（`navigator.clipboard` 只在安全上下文可用，OCR 页面的
