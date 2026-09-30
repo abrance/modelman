@@ -24,11 +24,14 @@ WORKDIR /app
 # 改用阿里云的目录列表镜像时参数换成 --find-links（两边的写法不同，
 # 不是只换个域名）。
 #
+# ARG 的默认值**必须加引号**：Docker 会在这里按空格截断，不加就只能拿到
+# `--index-url` 一个词，pip 报 “option requires 1 argument”。
+#
 # 权重取回的源同理，HF_ENDPOINT 是可换的（本机直连 huggingface.co 常常不通）。
 # 依赖安装不加 --quiet：CI 卡在安装上时，日志里就只剩一条命令行。
 COPY services/jev/requirements.txt /app/requirements.txt
 ARG TORCH_VERSION=2.9.1+cpu
-ARG TORCH_SOURCE_ARGS=--index-url https://download.pytorch.org/whl/cpu
+ARG TORCH_SOURCE_ARGS="--index-url https://download.pytorch.org/whl/cpu"
 RUN pip install --no-cache-dir "torch==${TORCH_VERSION}" ${TORCH_SOURCE_ARGS} \
  && pip install --no-cache-dir -r /app/requirements.txt
 
