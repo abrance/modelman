@@ -3,15 +3,20 @@
 给小模型准备的一条尽量无脑的交付链路：一个服务一个镜像，CI 构建并发布，
 部署主机拉取，上线前有健康门禁。
 
-当前有两个服务，技术栈不同、交付约定相同：
+当前有三个服务，技术栈不同、交付约定相同：
 
 | 服务 | 任务 | 技术栈 | 权重 | 运行形态 |
 |---|---|---|---|---|
 | [ocr](services/ocr/README.md) | PP-OCR 文字识别 | Rust + MNN | `.mnn` 随镜像交付 | 无状态 |
 | [logcluster](services/logcluster/README.md) | Drain3 日志模板聚类 | Python + FastAPI | 无神经网络权重，参数即"模型" | **有状态**，模板树落在状态卷（cops 侧为 PVC） |
+| [forecast](services/forecast/README.md) | TimesFM 3.0 时序预测（点预测 + 分位） | Python + FastAPI + PyTorch | 1.32 GB，构建期按 revision + sha256 取回，**不进仓库也不进构建上下文** | 无状态 |
 
-两者共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
+三者共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
 `make <目标> SERVICE=<name>` 分派。差异只在容器内部。设计依据见 `docs/design.md`。
+
+许可证口径不一，用之前先看 `registry/<服务名>.yaml`：`ocr` 与 `logcluster` 不涉及
+第三方权重许可；`forecast` 的**代码**是 Apache-2.0，但 **TimesFM 3.0 权重是非商业许可**
+（`timesfm-non-commercial-license-v1.0`），自用与评估可以，商业与生产不行。
 
 ## 目录结构
 
@@ -32,6 +37,13 @@ modelman/
 │       ├── src/                # 服务代码；src/static/ 是自带页面（随镜像交付）
 │       ├── tests/fixtures/     # 合成样本 + 契约基线
 │       ├── tools/              # 契约基线生成器、页面验收脚本
+│       ├── service.mk
+│       ├── smoke.sh
+│       └── Dockerfile
+│   └── forecast/               # TimesFM 3.0 时序预测服务（Python，不入 cargo workspace）
+│       ├── src/                # 服务代码；src/static/ 是自带页面（随镜像交付）
+│       ├── tests/fixtures/     # 契约用例 + 基线
+│       ├── tools/              # 权重取回（revision + sha256）、基线生成器、冒烟断言
 │       ├── service.mk
 │       ├── smoke.sh
 │       └── Dockerfile
@@ -59,6 +71,9 @@ make smoke  SERVICE=ocr          # 构建镜像、起容器、打一次真实识
 
 make test   SERVICE=logcluster   # Python 服务：先建 venv，再跑 pytest
 make smoke  SERVICE=logcluster   # 起容器、等就绪、打一次真实聚类
+
+make test   SERVICE=forecast     # 同上；首次会按 revision + sha256 取回 1.32 GB 权重
+make smoke  SERVICE=forecast     # 起容器、等就绪、打一次真实预测
 ```
 
 根 `Makefile` 是服务无关的分派器：具体命令写在 `services/<name>/service.mk`，
@@ -77,6 +92,11 @@ curl -s -F image=@services/ocr/tests/fixtures/case_05.png \
 curl -s -X POST -H 'Content-Type: application/json' \
      -d '{"lines":["user alice logged in","user bob logged in"]}' \
      http://127.0.0.1:8080/cluster
+
+# 时序预测（分位只能是模型自带的那九档：0.1…0.9）
+curl -s -X POST -H 'Content-Type: application/json' \
+     -d '{"series":[{"values":[100,104,99,110,121,118,130]}],"horizon":3,"quantiles":[0.1,0.5,0.9]}' \
+     http://127.0.0.1:8080/v1/forecast
 ```
 
 ## OCR 服务
@@ -156,14 +176,37 @@ Drain3 在线模板挖掘。把一批日志行喂进来，得到每行所属的�
 鉴权现状同 OCR（`design.md` D16、D17）：默认不启用 `AUTH_TOKEN`，入口挂上即可用。**代价比 OCR 重** —— 页面上那个「聚类」按钮写的是模板树，
 谁都能按，而模板污染不自愈；要收敛时启用 `AUTH_TOKEN`，页面不用改。
 
+## 时序预测服务
+
+TimesFM 3.0（330M 参数，PyTorch CPU）做点预测与分位预测：给一段历史值，返回未来若干步。
+`point` 是中位数，`quantiles` 是 0.1…0.9 九档——**分位是模型自带的，只认这几档**，
+请求别的档位（如 0.25）返回 400 并列出可用档位。
+
+它和 OCR、日志聚类的差别（细节见 [`services/forecast/README.md`](services/forecast/README.md)）：
+
+- **权重不进仓库**（1.32 GB，超过仓库 100 MB 的单文件上限）：构建期按不可变 `revision`
+  取回，用 `registry/forecast-digests.json` 的 sha256 逐文件校验；运行期 `local_files_only`，
+  不联网。构建上下文也不带权重（`.dockerignore`），否则每次构建都要先上传几个 G。
+- **常驻内存是主要成本**：加载后约 1.4 GiB、加载峰值约 2.8 GB，k8s 内存上限 3Gi；
+  推理线程数默认钉在 4（共享云主机的核不是自己的）。
+- **超长上下文取最后一段**而不是报错，响应里用 `truncated=true` 告知；
+  `MAX_CONTEXT` 默认 4096（模型上限 15360）。
+
+服务接口沿用仓库约定，业务端点是 `POST /v1/forecast`；根路径 `/` 也是自带页面。
+鉴权现状同其它服务（不启用 `AUTH_TOKEN`）；**许可证是它的额外边界**，见下一节。
+
 ## 许可
 
 代码使用 MIT，见 `LICENSE`。`services/ocr/models/` 下的模型文件来自 PaddlePaddle /
 PaddleOCR，沿用上游 Apache-2.0，出处见 `services/ocr/models/README.md`。
-`services/logcluster/` 无权重文件。
+`services/logcluster/` 无权重文件。`services/forecast/` 的**代码**是 Apache-2.0，
+但 TimesFM 3.0 的**权重**沿用上游 `timesfm-non-commercial-license-v1.0`（非商业）：
+自用与评估可以，商业与生产不行，要走到商业那一步就换整档权重（TimesFM 2.5 是
+Apache-2.0）。这一条也写在 `registry/forecast.yaml` 的 `license` 段里。
 
 ## 交付
 
 本仓库不负责部署。打 tag 后由 CI 构建并推送到 GHCR，再由 `cops` 仓库固定镜像 tag
-完成部署。tag 约定 `<服务名>/v<版本>`（如 `ocr/v0.1.3`、`logcluster/v0.1.1`），
+完成部署。tag 约定 `<服务名>/v<版本>`（如 `ocr/v0.1.3`、`logcluster/v0.1.1`、
+`forecast/v0.1.0`），
 镜像 tag 形如 `<版本>-<提交短 sha>`，永不覆盖。流程见 `docs/deployment.md`。
