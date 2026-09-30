@@ -1,0 +1,9 @@
+{
+  "_comment": "services/forecast 交付的 timesfm-3.0 档位权重摘要。由 tools/fetch_weights.py 在构建期校验，服务启动时也用它做加载前校验。改权重必须同步改这个文件与 registry/forecast.yaml 的 revision，并重新生成契约基线。",
+  "repo": "google/timesfm-3.0-pytorch",
+  "revision": "43046b85ec22d584a13f8098c2ed39c889e129c2",
+  "files": {
+    "config.json": "ff17bbc07b792c5a904cca265b8468579d736a4fe84981da25eb871b0a125bc6",
+    "model.safetensors": "a7592b0a8432baee54483254e5647856911ce69e09d09a9bb65904b2d98f17da"
+  }
+}
