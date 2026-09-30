@@ -47,7 +47,7 @@ grep -qi 'content-type: text/html' /tmp/jev-ui-headers
 grep -qi "content-security-policy: default-src 'none'" /tmp/jev-ui-headers
 echo "smoke ui: 页面与静态资源就绪"
 
-python3 "$(dirname "$0")/smoke_checks.py"
+python3 "$(dirname "$0")/tools/smoke_checks.py"
 
 # 只报告不改判：healthcheck 有 start-period，冒烟跑到这里通常还是 starting。
 echo "smoke: health=$(docker inspect -f '{{.State.Health.Status}}' "${name}")"
