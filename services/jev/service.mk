@@ -12,13 +12,20 @@ PY   := $(VENV)/bin/python
 # torch 单独装 CPU 轮子：PyPI 上的 linux 轮子会连带拉进整套 CUDA 依赖，
 # 镜像体积与构建时间都翻几倍。
 #
-# 默认用 PyTorch 官方 CPU 索引：它是标准的 PEP 503 索引，GitHub 托管 runner
-# 拉它很快。国内网络下官方索引会报 hash 校验失败，改阿里云的目录型镜像：
-#   make build SERVICE=jev TORCH_INDEX=https://mirrors.aliyun.com/pytorch-wheels/cpu/
-# 默认值必须选“CI 能过”的那个：卡在依赖安装上的失败要先在本地重现，而 CI
-# 一旦卡住要等满 30 分钟才报错。
-TORCH_INDEX ?= https://download.pytorch.org/whl/cpu
+# torch 单独装 CPU 轮子：PyPI 上的 linux 轮子会连带拉进整套 CUDA 依赖，
+# 镜像体积与构建时间都翻几倍。版本号两侧一致（`torch==2.9.1+cpu`）。
+#
+# 源写的是一段 pip 参数，因为两边的类型不同，不是只换个域名：
+#   - 官方索引是 PEP 503 索引，用 --index-url（GitHub 托管 runner 拉它很快）；
+#   - 阿里云的 pytorch-wheels 是目录列表，只能用 --find-links，
+#     而且国内网络下官方索引会报 hash 校验失败。
+# 本地（国内网络）覆盖方式：
+#   make build SERVICE=jev \
+#     TORCH_SOURCE_ARGS="--find-links https://mirrors.aliyun.com/pytorch-wheels/cpu/"
+# 默认值选“CI 能过”的那个：卡在依赖安装上在本地几秒就能看出，
+# 而 CI 要等满 30 分钟超时，日志里还只剩一条命令行。
 TORCH_VERSION := 2.9.1+cpu
+TORCH_SOURCE_ARGS ?= --index-url https://download.pytorch.org/whl/cpu
 
 # 权重取回的源，同样是环境可覆盖的（cloud3 直连 HF，本机多数时候要走镜像）
 HF_ENDPOINT ?= https://huggingface.co
@@ -27,8 +34,8 @@ HF_ENDPOINT ?= https://huggingface.co
 # 并把权重取回本地——契约测试会真实加载模型，没有权重就只能整组跳过。
 SERVICE_BUILD = \
 	$(PYTHON) -m venv $(VENV) && \
-	$(PY) -m pip install --quiet --disable-pip-version-check \
-		"torch==$(TORCH_VERSION)" -f $(TORCH_INDEX) && \
+	$(PY) -m pip install --disable-pip-version-check \
+		"torch==$(TORCH_VERSION)" $(TORCH_SOURCE_ARGS) && \
 	$(PY) -m pip install --quiet --disable-pip-version-check \
 		-r $(SERVICE_DIR)/requirements-dev.txt && \
 	$(PY) $(SERVICE_DIR)/tools/fetch_weights.py \

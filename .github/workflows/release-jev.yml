@@ -27,9 +27,9 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-jev
   # 权重取回的源。GitHub 托管 runner 在境外，直连 HuggingFace 即可。
   HF_ENDPOINT: https://huggingface.co
-  # torch 的 CPU 轮子源。官方索引是标准 PEP 503，runner 拉它很快；
-  # 不要换成国内目录型镜像：那类源在境外 runner 上会卡到超时。
-  TORCH_INDEX: https://download.pytorch.org/whl/cpu
+  # torch 的 CPU 轮子源。官方索引是 PEP 503，runner 拉它很快；
+  # 不要换成国内目录型镜像：那类源要用 --find-links，且在境外 runner 上会卡到超时。
+  TORCH_SOURCE_ARGS: --index-url https://download.pytorch.org/whl/cpu
 
 jobs:
   release:
@@ -75,7 +75,7 @@ jobs:
         # 这一步会真实加载 678 MB 权重并推理，所以 runner 需要能访问 HuggingFace。
         env:
           HF_ENDPOINT: ${{ env.HF_ENDPOINT }}
-          TORCH_INDEX: ${{ env.TORCH_INDEX }}
+          TORCH_SOURCE_ARGS: ${{ env.TORCH_SOURCE_ARGS }}
         run: make test SERVICE=jev
 
       - name: 登录 GHCR
@@ -95,12 +95,12 @@ jobs:
           push: true
           platforms: linux/amd64
           # 镜像里没有 .git，提交与构建时间只能构建期注入；
-          # HF_ENDPOINT 与 TORCH_INDEX 传进构建，决定依赖与权重从哪个源取回。
+          # HF_ENDPOINT 与 TORCH_SOURCE_ARGS 传进构建，决定依赖与权重从哪个源取回。
           build-args: |
             GIT_COMMIT=${{ steps.meta.outputs.short_sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
             HF_ENDPOINT=${{ env.HF_ENDPOINT }}
-            TORCH_INDEX=${{ env.TORCH_INDEX }}
+            TORCH_SOURCE_ARGS=${{ env.TORCH_SOURCE_ARGS }}
           tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

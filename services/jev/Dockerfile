@@ -16,15 +16,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 默认用 PyTorch 官方 CPU 索引（标准 PEP 503，GitHub 托管 runner 拉它很快）。
-# 国内网络下官方索引会报 hash 校验失败，改用阿里云的目录型镜像，或直接用
-# 阿里云 pytorch-wheels 镜像，**不要**把镜像源写成唯一路径：
-# CI 卡在依赖安装上要等满 30 分钟超时才报错。
+# torch 单独装 CPU 轮子。PyPI 上的 linux 轮子会连带拉进整套 CUDA 依赖，
+# 体积从 184 MB 涨到 GB 级，而这里只用 CPU 前向。版本号写作 `torch==2.9.1+cpu`。
+#
+# 默认源是 PyTorch 官方 CPU 索引：它是 PEP 503 索引，所以用 --index-url，
+# GitHub 托管 runner 拉它很快。国内网络下官方索引会报 hash 校验失败，
+# 改用阿里云的目录列表镜像时参数换成 --find-links（两边的写法不同，
+# 不是只换个域名）。
 #
 # 权重取回的源同理，HF_ENDPOINT 是可换的（本机直连 huggingface.co 常常不通）。
+# 依赖安装不加 --quiet：CI 卡在安装上时，日志里就只剩一条命令行。
 COPY services/jev/requirements.txt /app/requirements.txt
-ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir "torch==2.9.1+cpu" -f "${TORCH_INDEX}" \
+ARG TORCH_VERSION=2.9.1+cpu
+ARG TORCH_SOURCE_ARGS=--index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir "torch==${TORCH_VERSION}" ${TORCH_SOURCE_ARGS} \
  && pip install --no-cache-dir -r /app/requirements.txt
 
 COPY services/jev/src /app/src
