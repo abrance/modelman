@@ -57,8 +57,10 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 它的权重是 678 MB，超出公开仓库单文件上限，所以**构建期**从 HuggingFace 取回、
 逐文件校验 sha256 后才烘进镜像（`docs/design.md` D18）。这带来两件部署侧要知道的事：
 
-1. **构建机必须能访问权重源。** GitHub 托管 runner 直连 `huggingface.co` 即可；
-   若某天不通，把 `release-jev.yml` 的 `HF_ENDPOINT` 换成镜像源即可，不用改 Dockerfile。
+1. **构建机必须能访问依赖与权重源。** GitHub 托管 runner 直连 `huggingface.co` 与
+   PyTorch 官方 CPU 索引即可；若某天不通，把 `release-jev.yml` 的 `HF_ENDPOINT` /
+   `TORCH_INDEX` 换成镜像源即可，不用改 Dockerfile。**不要把国内目录型镜像写成
+   唯一源**：境外 runner 拉它会卡到 30 分钟超时。
 2. **资源限额必须给够。** 实测常驻 1.7 GB、加载峰值 2.3 GB，`limits` 给到 3Gi 以上，
    否则容器会在加载阶段被 OOM 杀掉；`INFER_THREADS` 要显式设置（建议 4），
    给满核数反而慢一个数量级。取值依据见 `docs/jev.md`。

@@ -108,9 +108,24 @@ make smoke SERVICE=jev    # 起容器、等就绪、打一次真实判定
 ```
 
 首次 `make build` 要下载 184 MB 的 torch CPU 轮子与 678 MB 权重。权重只在本地
-缺失或摘要不符时才下载；国内网络直连 `huggingface.co` 常常不通，用
-`HF_ENDPOINT=https://hf-mirror.com make build SERVICE=jev` 换源（cloud3 上相反，
-直连可用、镜像源跳转，见 `docs/jev.md`）。
+缺失或摘要不符时才下载。
+
+依赖与权重的取回源都是可覆盖的，因为两台机器上的可达性相反：
+
+| 变量 | 默认（面向 CI / cloud3） | 本机（国内网络） |
+|---|---|---|
+| `TORCH_INDEX` | `https://download.pytorch.org/whl/cpu` | `https://mirrors.aliyun.com/pytorch-wheels/cpu/` |
+| `HF_ENDPOINT` | `https://huggingface.co` | `https://hf-mirror.com` |
+
+```bash
+# 本机（直连 HF 不通、官方 torch 索引报 hash 校验失败）
+make build SERVICE=jev \
+  TORCH_INDEX=https://mirrors.aliyun.com/pytorch-wheels/cpu/ \
+  HF_ENDPOINT=https://hf-mirror.com
+```
+
+默认值选的是"CI 能过"的那个：CI 卡在依赖安装上要等满 30 分钟才报错，拿不到
+任何有用的日志；本地卡住则几秒就能看出来。
 
 ## 配置
 
