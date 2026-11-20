@@ -1,6 +1,10 @@
 # 广东现货小时电价 GBM 服务的构建入口（Python 技术栈，与 forecast 同款约定）。
 
-PYTHON ?= python3
+# 钉 python3.12：发布门禁在 runner 上现建 venv，runner 默认 python3 已到 3.14，
+# 而依赖里的 pydantic-core 没有 3.14 的 wheel，源码构建会撞 PyO3 的
+# "maximum supported version (3.13)"。3.12 与运行镜像 python:3.12-slim 对齐。
+# 本地没有 python3.12 时可覆盖：make build SERVICE=price-gbm PYTHON=python3
+PYTHON ?= python3.12
 
 # 绝对路径：SERVICE_RUN 会先 cd 进服务目录，相对路径会失效
 VENV := $(CURDIR)/$(SERVICE_DIR)/.venv
