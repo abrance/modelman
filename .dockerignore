@@ -13,6 +13,12 @@ services/logcluster/tools
 # 本地跑出来的模板树状态同样不进镜像
 services/*/.state
 
+# 权重不进构建上下文：Python 服务在镜像里按摘要自己取回（TimesFM 1.32 GB、
+# Laya 678 MB），带上就等于让每次构建都上传一遍这几个 G。
+services/*/models
+# 例外：price-gbm 的 booster 是几 MB 文本，随仓库交付进镜像（D1）
+!services/price-gbm/models
+
 services/ocr/target
 
 # Only the release binary is needed from the build directory. The parent

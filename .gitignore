@@ -9,3 +9,6 @@ services/*/.pytest_cache/
 .idea/
 .vscode/
 services/*/models/
+# 例外：price-gbm 的 booster 是几 MB 文本，随仓库交付（D1）
+!services/price-gbm/models/
+!services/price-gbm/models/**

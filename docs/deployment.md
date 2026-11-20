@@ -47,6 +47,7 @@ cops（部署仓库）
 | ocr | `ocr/vX.Y.Z` | 根 `Cargo.toml` 的 `version` | `release-ocr.yml` |
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
 | jev | `jev/vX.Y.Z` | `services/jev/src/build_info.py` 的 `VERSION` | `release-jev.yml` |
+| price-gbm | `price-gbm/vX.Y.Z` | `services/price-gbm/src/build_info.py` 的 `VERSION` | `release-price-gbm.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
