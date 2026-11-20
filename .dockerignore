@@ -19,6 +19,7 @@ services/*/.state
 # **不能写成 services/*/models**：OCR 的权重是随仓库交付的小模型（39 MB），
 # services/ocr/Dockerfile 里有 `COPY services/ocr/models`，把它一起排掉会让
 # 镜像构建直接失败（failed to compute cache key: "/services/ocr/models": not found）。
+# price-gbm 的 booster 也是随仓库交付的几 MB 文本（D1），不列在这里。
 # 新增取权重的服务时在这里加一行。
 services/forecast/models
 services/jev/models

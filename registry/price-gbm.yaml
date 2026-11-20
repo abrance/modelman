@@ -1,0 +1,56 @@
+# 广东现货小时电价 GBM 服务的模型注册表条目。
+#
+# 与 forecast.yaml 同一套约定：这里是"哪个模型在跑"的唯一事实来源，
+# 改这个文件（或权重本身）意味着要出新镜像，走同一条发布链路
+# （打 tag -> CI 构建 -> 改 cops 的 image tag）。
+
+services:
+  price-gbm:
+    task: spot_price_hour_forecasting
+    runtime: python-fastapi-lightgbm
+    default_model: gbm-hour-v1
+    tiers:
+      - id: gbm-hour-v1
+        source: LightGBM quantile regression (q10/q50/q90)，自训练
+        # 不可变标识：训练数据快照范围 + 口径 + seed，重训即换 revision
+        revision: gd-home24h-2023-09-02~2026-11-15-H5-seed42
+        # 小模型权重随仓库交付（D1），文件级 sha256 在摘要清单里
+        files:
+          - q10.txt
+          - q50.txt
+          - q90.txt
+        bytes: 8430000
+        digest_manifest: services/price-gbm/models/gbm-hour-v1/sha256.json
+        training_data: services/price-gbm/training-data/gd-home24h.json
+        training_note: >-
+          官网主页 24 点分时的完整日快照（公开市场数据），tools/train.py 确定性
+          重训（seed 钉死、单线程、无 bagging）。口径 H=5：目标日距锚点 5 天，
+          对应官网 T+5 滞后的生产口径。
+        license:
+          code: Apache-2.0
+          weights: self-trained
+          data_note: >-
+            训练数据来自广东电力交易中心官网公开发布的日前分时价与电量，
+            可公开分发。
+        runtime_cost:
+          # 本机（AMD Ryzen，4 线程实测）：booster 文本毫秒级加载，
+          # 单请求特征+推理 ~50ms（40 天输入）。内存常驻 <300MB。
+          load_peak_rss_mb: 300
+          predict_ms_40d: 50
+        accuracy:
+          # 90 天 as-of 重放（2026-08-18~11-15，ems 仓库 benchmark.py）
+          horizon5_mape_pct: 19.74
+          note: >-
+            同窗口对照：TimesFM 3.0 是 20.55%、naive 23.4%；GBM 与 TimesFM
+            融合（均值）19.41%，融合由调用方（ems 后端）完成，本服务只出 GBM。
+        limits:
+          - 节假日表只覆盖 2024-2026，表外目标日节假日特征恒为 0
+          - 分位带未做 conformal 校准，名义 80% 实测约 46%
+    contract:
+      fixtures: services/price-gbm/tests/fixtures
+      baseline: services/price-gbm/tests/fixtures/baseline.json
+      tolerance: 0.001
+      shape_checked: true
+      monotonic_quantiles: true
+      digest_checked: true
+      latency_budget_ms: 2000

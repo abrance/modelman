@@ -21,6 +21,7 @@
 | 时序预测服务（TimesFM 3.0，330M 参数，PyTorch CPU，Python + FastAPI） | 已上线 | `services/forecast`；镜像 `v0.1.0-de7e751`（digest `sha256:010d180e…`）跑在 cloud3（k3s），入口 `https://forecast.xiaoyxq.top`；`cops` 侧单元 `apps/model-forecast` |
 | 时序预测自带 Web 界面 | 已上线 | `GET /`（根路径，打开域名就是页面）：填或粘贴历史值 → 看中位数点预测与 0.1–0.9 分位区间，可多序列、多分位；三份静态资源随镜像交付，不启动新容器 |
 | 判定服务（System One 风格 typed decisions） | 已实现，待发布 | `services/jev`：`POST /v1/systemone` 与 TypeSafe Jev 同形状，一次前向出 choice/noul/score 全部答案与概率；权重 678 MB 不进仓库，构建期按 revision 取回并逐文件校验 sha256（D18）。实测（cloud3）：加载 9.7 s、常驻 1.7 GB、峰值 2.3 GB、单问 207 ms、三问 890 ms（4 线程）。设计与精度边界见 `docs/jev.md` |
+| 电价预测服务（price-gbm，LightGBM 分位回归） | 已实现，待发布 | `services/price-gbm`：`POST /v1/price-forecast` 返回 q10/q50/q90；booster 文本随镜像交付，90 天回测 MAPE 19.74%（TimesFM 20.55%、融合 19.41%），已知限制与重训方式见 `services/price-gbm/README.md` |
 
 实测指标（口径：预热后 + 20 次真实请求后的稳态 RSS）：单档约 74 MB、两档约 95 MB；
 `v6small` p50 6.5 ms、p95 16.9 ms（本机），云主机端到端 28–54 ms；
@@ -33,7 +34,7 @@
 ### 一、对外开放的鉴权口径（已定，不再是"下一步"）
 
 **口径已定并落地：直接开，不启用鉴权**（`docs/design.md` D15–D17），已上线服务的入口都
-已公网可达。统一鉴权在外层做（见中期表），届时重新评估服务侧 `AUTH_TOKEN` 的去留；
+已公网可达（jev 与 price-gbm 待发布）。统一鉴权在外层做（见中期表），届时重新评估服务侧 `AUTH_TOKEN` 的去留；
 要提前收敛，cops 三处即可，见 `docs/deployment.md`。
 
 ### 二、资源规划决策（已定：升配主机，不做量化）
@@ -52,6 +53,7 @@
 - 判定服务同批落在同一台机器上：常驻 1.7 GB、峰值 2.3 GB，单问 207 ms、三问 890 ms
   （`INFER_THREADS=4`）。两个内存大户加起来仍在 16 GiB 的余量内，`limits` 都按 3Gi 配；
   线程数必须显式设置——实测判定服务给满 16 线程时单问从 207 ms 涨到 2165 ms。
+- 电价预测服务另算轻量档：booster 文本常驻 <300 MB，单请求约 50 ms（40 天输入），权重随仓库交付，不占上面两份内存。
 
 ### 三、时序预测服务（已上线）
 
@@ -136,10 +138,10 @@
 | 项 | 说明 | 触发条件 |
 |---|---|---|
 | 访问日志提到 INFO | 现在每个请求两行 DEBUG（`on_request` + `on_response`）。改成一条 INFO 级别需要改代码并发新版本，收益是日志量减半、级别语义更准 | 日志量成为问题，或下一次因其它原因发版时一并做 |
-| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。三个 Python 服务（logcluster、forecast、jev）的代码都按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对它们仍是空操作 | 触发条件已满足（三个 Python 服务），待排期把 `ruff check` / `ruff format --check` 接进 CI |
+| Python 服务的静态检查与格式化 | CI 的 lint job 现在只覆盖 Rust（`fmt` + `clippy`）。四个 Python 服务（logcluster、forecast、jev、price-gbm）的代码都按 ruff 默认规则与格式整理过，但没有门禁，`make fmt-check` / `make clippy` 对它们仍是空操作 | 触发条件已满足（四个 Python 服务），待排期把 `ruff check` / `ruff format --check` 接进 CI |
 | 提取基础镜像 | 把 torch / transformers / ONNX Runtime 固定在基础镜像层，服务镜像只叠代码与权重，缩短构建与拉取时间 | **触发条件已满足且代价已出现**：forecast 与 jev 都把 torch + transformers 烘进镜像，两个镜像各背一份（各约 1 GB 量级）。再做同技术栈的服务前应先抽基础层 |
 | CI target 缓存治理 | 缓存命中后一次完整构建约 3.5 分钟；随服务数量增加需确认缓存体积不触顶 | 缓存体积接近上限时 |
-| 统一鉴权 | 现在 ocr / logcluster / forecast / jev 都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
+| 统一鉴权 | 现在 ocr / logcluster / forecast / jev / price-gbm 都不启用 `AUTH_TOKEN`（D15/D16/D17），各自的 `AUTH_TOKEN` 是「要收敛时够用」的停手方案，不是终局。方向已定：在外层做统一鉴权，而不是每个服务各养一套密钥 | 开始做统一鉴权时；届时要重新定服务侧 `AUTH_TOKEN` 保留还是删掉 |
 | 指标接入抓取 | 各服务的 `/metrics` 都已就绪（k3s 集群内可达），但还没有 Prometheus 抓取 | 需要在 Grafana 上看曲线时 |
 | 镜像体积优化 | 当前 133 MB，主要是模型（39 MB）与运行时基础层 | 拉取时间成为瓶颈时 |
 | 批量接口背压 | `/ocr/batch` 目前逐个串行处理，超长批次会长时间占用一个并发槽位 | 出现大批量调用方时 |

@@ -35,9 +35,10 @@ cops（部署仓库）
 | 经镜像站拉取 | `ghcr.chenby.cn/abrance/modelman-<服务名>`（cloud2 用；cloud3 直连 `ghcr.io`） |
 | 平台 | `linux/amd64` |
 
-四个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
+ocr、logcluster、forecast 现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
 `https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`，
-`model-forecast` 入口 `https://forecast.xiaoyxq.top`，`model-jev` 的入口由 cops 侧决定。
+`model-forecast` 入口 `https://forecast.xiaoyxq.top`。`model-jev` 与
+`model-price-gbm` 的入口由 cops 侧决定。
 主机的镜像源差异、端口与资源声明都在 cops 侧，本仓库不维护主机清单。
 
 ## 发布流程（一服务一份 workflow）
@@ -48,6 +49,7 @@ cops（部署仓库）
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
 | forecast | `forecast/vX.Y.Z` | `services/forecast/src/build_info.py` 的 `VERSION` | `release-forecast.yml` |
 | jev | `jev/vX.Y.Z` | `services/jev/src/build_info.py` 的 `VERSION` | `release-jev.yml` |
+| price-gbm | `price-gbm/vX.Y.Z` | `services/price-gbm/src/build_info.py` 的 `VERSION` | `release-price-gbm.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
@@ -71,7 +73,8 @@ revision 从 HuggingFace 取回、逐文件校验 sha256 后才烘进镜像（`d
    207 ms 涨到 2165 ms，共享 vCPU 上互相踩的代价比并行收益大一个数量级。取值依据见
    `docs/jev.md`。
 
-两个服务都是无状态的，回滚与 OCR 一样只改 tag。
+两个服务都是无状态的，回滚与 OCR 一样只改 tag。`model-price-gbm` 的 booster 随仓库
+交付（`registry/price-gbm.yaml`），不属本节。
 
 ## 有状态服务：日志聚类的额外要求
 
@@ -116,6 +119,7 @@ revision 从 HuggingFace 取回、逐文件校验 sha256 后才烘进镜像（`d
 - **日志聚类**：贴日志 → 看模板。设计与交互见 `docs/logcluster-ui.md`。
 - **时序预测**：填/粘贴历史值 → 中位数点预测与 0.1–0.9 分位区间，可多序列多分位。
 - **判定服务**：填 state 与 questions → 看答案与选项概率分布（调阈值时用）。
+- **电价预测**：填日序列与目标日 → 看 q10/q50/q90 电价区间。
 
 入口必须落在**域名根路径**（页面用绝对路径调 `/ocr`、`/cluster`，子路径式入口会
 打不开数据），并走 HTTPS（`navigator.clipboard` 只在安全上下文可用，OCR 页面的
