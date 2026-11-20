@@ -5,6 +5,11 @@ __pycache__/
 *.pyc
 services/*/.state/
 services/*/.pytest_cache/
+# Python 服务在构建期按摘要取回的权重（TimesFM 1.32 GB、Laya 678 MB），不进仓库。
+# **不能写成 services/*/models/**：OCR 的权重（39 MB 小模型）是随仓库交付的，
+# 通配符会让以后新增的 OCR 模型文件被静默忽略。新增取权重的服务时在这里加一行。
+services/forecast/models/
+services/jev/models/
 .DS_Store
 .idea/
 .vscode/

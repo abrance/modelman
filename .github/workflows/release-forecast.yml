@@ -1,0 +1,144 @@
+name: Release forecast service
+
+# 发布由 tag 触发，tag 约定为 <service>/v<semver>，例如 forecast/v0.1.0。
+# 流程与仓库既有发布链路一致：CI 只负责产出镜像，部署由 cops 改 tag 完成。
+#
+# 与 release-jev.yml 的差别只有三处：tag 前缀、镜像名，以及超时——这个服务的
+# 权重是 1.32 GB（jev 是 678 MB），取回与 sha256 校验都更慢。
+on:
+  push:
+    tags:
+      - "forecast/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 forecast/v0.1.0），用于重跑发布"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-forecast-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-forecast
+  # 权重取回的源。GitHub 托管 runner 在境外，直连 HuggingFace 即可。
+  HF_ENDPOINT: https://huggingface.co
+  # torch 的 CPU 轮子源。官方索引是 PEP 503，runner 拉它很快；
+  # 不要换成国内目录型镜像：那类源要用 --find-links，且在境外 runner 上会卡到超时。
+  TORCH_SOURCE_ARGS: --index-url https://download.pytorch.org/whl/cpu
+
+jobs:
+  release:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本与提交
+        id: meta
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${ref#forecast/}"
+          if ! printf '%s' "${version}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag 必须形如 forecast/v1.2.3，实际为 ${ref}" >&2
+            exit 1
+          fi
+
+          # src/build_info.py 里的 VERSION 是版本的唯一来源，tag 必须与它一致。
+          # 不一致的话镜像里报的版本会和 tag 对不上，运维就失去了判断依据。
+          declared="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' services/forecast/src/build_info.py)"
+          if [ "v${declared}" != "${version}" ]; then
+            echo "tag 是 ${version}，但 services/forecast/src/build_info.py 里写的是 ${declared}" >&2
+            exit 1
+          fi
+
+          # 与另外几个服务一致：短 sha 取 7 位
+          short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
+          # 镜像 tag 始终带提交短 sha，保证同名 tag 不出现在两个不同内容上：
+          # 镜像站按 tag 缓存，可覆盖的 tag 会拿到陈旧层。
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${version}-${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+
+      - name: 契约测试（发布门禁）
+        # 镜像一旦推送就会被 cops 引用，因此权重摘要、输出形状与分位单调性的回归
+        # 必须在推送前拦住。这一步会真实取回 1.32 GB 权重并跑预测。
+        env:
+          HF_ENDPOINT: ${{ env.HF_ENDPOINT }}
+          TORCH_SOURCE_ARGS: ${{ env.TORCH_SOURCE_ARGS }}
+        run: make test SERVICE=forecast
+
+      - name: 登录 GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送镜像
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/forecast/Dockerfile
+          push: true
+          platforms: linux/amd64
+          # 镜像里没有 .git，提交与构建时间只能构建期注入；
+          # HF_ENDPOINT 与 TORCH_SOURCE_ARGS 传进构建，决定依赖与权重从哪个源取回。
+          build-args: |
+            GIT_COMMIT=${{ steps.meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            HF_ENDPOINT=${{ env.HF_ENDPOINT }}
+            TORCH_SOURCE_ARGS=${{ env.TORCH_SOURCE_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=modelman-forecast
+            org.opencontainers.image.description=TimesFM 3.0 time series forecasting service (PyTorch, CPU)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试
+        # 与 CI 共用 services/forecast/smoke.sh，让"镜像能跑"只有一处定义。
+        env:
+          IMAGE: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          PORT: "18082"
+        run: bash services/forecast/smoke.sh
+
+      - name: 发布信息
+        run: |
+          set -euo pipefail
+          {
+            echo "## 时序预测服务已发布"
+            echo
+            echo "镜像：\`${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "digest：\`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "### 许可证提醒"
+            echo
+            echo "权重是 \`timesfm-non-commercial-license-v1.0\`（非商业），代码是 Apache-2.0。"
+            echo "镜像里带着权重，等于随镜像再分发；接到公网入口之前先确认用途落在许可证允许的范围内。"
+            echo
+            echo "### cops 侧改动（apps/model-forecast/.env）"
+            echo
+            echo '```diff'
+            echo "-MODEL_FORECAST_IMAGE_TAG=v0.1.0-0000000"
+            echo "+MODEL_FORECAST_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}"
+            echo '```'
+            echo
+            echo "资源口径：内存上限至少 3Gi（实测 4 线程下常驻约 1.5 GB、加载峰值 2.8 GB）；"
+            echo "CPU request 给 1 即可，服务内部把并发收敛在 2、torch 线程收敛在 4。"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,64 @@
+# 模型注册表：每个服务实际运行的模型与配置
+#
+# 这里是"哪个模型在跑"的唯一事实来源。改这个文件意味着要出新镜像，
+# 与改代码走同一条发布链路（打 tag -> CI 构建 -> 改 cops 的 image tag）。
+#
+# 约定：
+# - revision 必须是不可变标识（HF 提交 sha、模型文件 sha256 或版本号），
+#   不要写分支名或可覆盖的 tag。
+# - 权重已在仓库内的小模型直接写 sha256；走 HuggingFace 的模型写 revision。
+# - 任何条目变更都要同步更新 services/<name>/tests/fixtures 的基线。
+
+services:
+  forecast:
+    task: time_series_forecasting
+    runtime: python-fastapi-timesfm3
+    default_model: timesfm-3.0
+    tiers:
+      - id: timesfm-3.0
+        source: TimesFM 3.0 (decoder-only time series foundation model, 330M)
+        repo: google/timesfm-3.0-pytorch
+        # 不可变标识：仓库提交 sha（config.json + model.safetensors 所在的那次提交）
+        revision: 43046b85ec22d584a13f8098c2ed39c889e129c2
+        files:
+          - config.json
+          - model.safetensors
+        bytes: 1322900097
+        digest_manifest: registry/forecast-digests.json
+        # 许可证是**权重与代码分开**的：代码 Apache-2.0，权重非商业。
+        # 这决定了它能用在哪：自用、评估、非商业研究可以；商业/生产用途不行。
+        license:
+          code: Apache-2.0
+          weights: timesfm-non-commercial-license-v1.0
+          weights_url: https://huggingface.co/google/timesfm-3.0-pytorch/blob/main/LICENSE
+          note: >-
+            权重为非商业许可，随镜像交付等于再分发该权重。把这个镜像接到公网入口
+            之前必须确认用途落在许可证允许的范围内；需要生产可用时换 TimesFM 2.5
+            （Apache-2.0）或其它可商用模型，接口形状不变。
+        runtime_cost:
+          # 实测（cloud3，Intel Xeon Gold 6133，4 线程）：加载峰值 RSS 2.8 GB，
+          # 512 点上下文 × 48 步 1.3 s。这些数决定容器内存上限与并发上界。
+          load_peak_rss_mb: 2800
+          predict_ms_512x48: 1300
+      # 只带一个档位是有意的：3.0 与 2.5 是两套权重与 API，同时常驻要双份内存。
+    excluded:
+      - id: timesfm-2.5
+        reason: >-
+          与 3.0 同时常驻要双份内存（3.0 单档位加载峰值 2.8 GB）；
+          需要 Apache-2.0 权重时应整档替换，而不是并存。
+      - id: multivariate-finetunes
+        reason: >-
+          上游另有多变量微调权重，但没有随 3.0 一起发布，也没有对应的不可变
+          revision 可锁定。接口已经支持多变量形状（`values` 传数组的数组），
+          等上游出了可锁定的版本再加。
+    contract:
+      fixtures: services/forecast/tests/fixtures
+      baseline: services/forecast/tests/fixtures/baseline.json
+      # 预测是确定性的：同一份权重、同一组参数、同样的输入，输出按容差一致
+      tolerance: 0.001
+      # 契约测试断言输出形状、分位单调性与点预测=0.5 分位，而不只是数值
+      shape_checked: true
+      monotonic_quantiles: true
+      # 基线里还有权重摘要与参数指纹两重校验
+      digest_checked: true
+      latency_budget_ms: 8000

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>时序预测 · modelman-forecast</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <h1>时序预测</h1>
+  <p class="sub">TimesFM 3.0（330M，CPU）· 输入历史序列，输出中位数点预测与 0.1–0.9 分位区间</p>
+  <p id="status" class="status" aria-live="polite">正在读取服务状态…</p>
+</header>
+
+<main>
+  <form id="form">
+    <label for="values">历史序列（逗号或换行分隔）</label>
+    <textarea id="values" rows="6" spellcheck="false" required>100,104,99,110,121,118,130,127,140,138,150,161,158,170,175</textarea>
+
+    <div class="row">
+      <div class="field">
+        <label for="horizon">预测步长</label>
+        <input id="horizon" type="number" min="1" max="512" value="12" required>
+      </div>
+      <div class="field">
+        <label for="token">AUTH_TOKEN（服务启用鉴权时填）</label>
+        <input id="token" type="password" autocomplete="off" placeholder="留空表示不需要">
+      </div>
+      <div class="field actions">
+        <button id="submit" type="submit">预测</button>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>分位</legend>
+      <label class="check"><input type="checkbox" value="0.1"> 0.1</label>
+      <label class="check"><input type="checkbox" value="0.2"> 0.2</label>
+      <label class="check"><input type="checkbox" value="0.3"> 0.3</label>
+      <label class="check"><input type="checkbox" value="0.4"> 0.4</label>
+      <label class="check"><input type="checkbox" value="0.5"> 0.5</label>
+      <label class="check"><input type="checkbox" value="0.6"> 0.6</label>
+      <label class="check"><input type="checkbox" value="0.7"> 0.7</label>
+      <label class="check"><input type="checkbox" value="0.8"> 0.8</label>
+      <label class="check"><input type="checkbox" value="0.9"> 0.9</label>
+      <span class="hint">全不勾 = 返回模型全部自带分位</span>
+    </fieldset>
+  </form>
+
+  <section id="result" hidden>
+    <h2>结果</h2>
+    <p id="meta" class="meta"></p>
+    <canvas id="chart" width="880" height="300"></canvas>
+    <details>
+      <summary>点预测数值</summary>
+      <div id="table"></div>
+    </details>
+  </section>
+
+  <section id="error" hidden>
+    <h2>出错了</h2>
+    <pre id="error-body"></pre>
+  </section>
+</main>
+
+<footer>
+  <a href="/version">/version</a>
+  <a href="/models">/models</a>
+  <a href="/readyz">/readyz</a>
+  <span class="note">TimesFM 3.0 权重为非商业许可（timesfm-non-commercial-license-v1.0）</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

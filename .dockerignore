@@ -15,9 +15,14 @@ services/*/.state
 
 # 权重不进构建上下文：Python 服务在镜像里按摘要自己取回（TimesFM 1.32 GB、
 # Laya 678 MB），带上就等于让每次构建都上传一遍这几个 G。
-services/*/models
-# 例外：price-gbm 的 booster 是几 MB 文本，随仓库交付进镜像（D1）
-!services/price-gbm/models
+#
+# **不能写成 services/*/models**：OCR 的权重是随仓库交付的小模型（39 MB），
+# services/ocr/Dockerfile 里有 `COPY services/ocr/models`，把它一起排掉会让
+# 镜像构建直接失败（failed to compute cache key: "/services/ocr/models": not found）。
+# price-gbm 的 booster 也是随仓库交付的几 MB 文本（D1），不列在这里。
+# 新增取权重的服务时在这里加一行。
+services/forecast/models
+services/jev/models
 
 services/ocr/target
 

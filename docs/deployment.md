@@ -35,9 +35,10 @@ cops（部署仓库）
 | 经镜像站拉取 | `ghcr.chenby.cn/abrance/modelman-<服务名>`（cloud2 用；cloud3 直连 `ghcr.io`） |
 | 平台 | `linux/amd64` |
 
-三个服务现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
+ocr、logcluster、forecast 现都在 `cops` 的 cloud3（k3s 单机）上运行：`model-ocr` 入口
 `https://ocr.xiaoyxq.top`，`model-logcluster` 入口 `https://logcluster.xiaoyxq.top`，
-`model-jev` 的入口由 cops 侧决定。
+`model-forecast` 入口 `https://forecast.xiaoyxq.top`。`model-jev` 与
+`model-price-gbm` 的入口由 cops 侧决定。
 主机的镜像源差异、端口与资源声明都在 cops 侧，本仓库不维护主机清单。
 
 ## 发布流程（一服务一份 workflow）
@@ -46,28 +47,34 @@ cops（部署仓库）
 |---|---|---|---|
 | ocr | `ocr/vX.Y.Z` | 根 `Cargo.toml` 的 `version` | `release-ocr.yml` |
 | logcluster | `logcluster/vX.Y.Z` | `services/logcluster/src/build_info.py` 的 `VERSION` | `release-logcluster.yml` |
+| forecast | `forecast/vX.Y.Z` | `services/forecast/src/build_info.py` 的 `VERSION` | `release-forecast.yml` |
 | jev | `jev/vX.Y.Z` | `services/jev/src/build_info.py` 的 `VERSION` | `release-jev.yml` |
 | price-gbm | `price-gbm/vX.Y.Z` | `services/price-gbm/src/build_info.py` 的 `VERSION` | `release-price-gbm.yml` |
 
 release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接失败——否则镜像 tag
 与 `/version` 报的版本对不上，运维就失去了判断依据。
 
-## 构建期取权重的服务：判定的额外要求
+## 构建期取权重的服务：时序预测与判定的额外要求
 
-`model-ocr` 与 `model-logcluster` 的权重与代码都在仓库里。`model-jev` 不是：
-它的权重是 678 MB，超出公开仓库单文件上限，所以**构建期**从 HuggingFace 取回、
-逐文件校验 sha256 后才烘进镜像（`docs/design.md` D18）。这带来两件部署侧要知道的事：
+`model-ocr` 与 `model-logcluster` 的权重与代码都在仓库里。`model-forecast`（1.32 GB）
+与 `model-jev`（678 MB）都不是：体积超出公开仓库单文件上限，所以**构建期**按不可变
+revision 从 HuggingFace 取回、逐文件校验 sha256 后才烘进镜像（`docs/design.md` D18）。
+这带来三件部署侧要知道的事：
 
 1. **构建机必须能访问依赖与权重源。** GitHub 托管 runner 直连 `huggingface.co` 与
-   PyTorch 官方 CPU 索引即可；若某天不通，把 `release-jev.yml` 的 `HF_ENDPOINT` /
-   `TORCH_SOURCE_ARGS` 换成镜像源即可，不用改 Dockerfile。**注意两边写法不同**：
-   官方索引是 PEP 503（`--index-url`），国内目录型镜像是 `--find-links`；
-   也不要把国内源写成唯一默认值，境外 runner 上会卡到 30 分钟超时。
-2. **资源限额必须给够。** 实测常驻 1.7 GB、加载峰值 2.3 GB，`limits` 给到 3Gi 以上，
-   否则容器会在加载阶段被 OOM 杀掉；`INFER_THREADS` 要显式设置（建议 4），
-   给满核数反而慢一个数量级。取值依据见 `docs/jev.md`。
+   PyTorch 官方 CPU 索引即可；若某天不通，改对应 release workflow 的 `HF_ENDPOINT` /
+   `TORCH_SOURCE_ARGS` 即可，不用改 Dockerfile。**注意 torch 的两种源写法不同**：
+   官方索引是 PEP 503（`--index-url`），国内目录型镜像是 `--find-links`；也不要把国内源
+   写成唯一默认值，境外 runner 上会卡到 30 分钟超时。
+2. **资源限额必须给够。** 判定服务实测常驻 1.7 GB、加载峰值 2.3 GB，`limits` 给到 3Gi
+   以上，否则容器会在加载阶段被 OOM 杀掉；时序预测同类问题见
+   `services/forecast/README.md`。
+3. **推理线程数要显式设置。** 判定的 `INFER_THREADS` 建议 4：实测给满 16 线程时单问从
+   207 ms 涨到 2165 ms，共享 vCPU 上互相踩的代价比并行收益大一个数量级。取值依据见
+   `docs/jev.md`。
 
-服务本身是无状态的，回滚与 OCR 一样只改 tag。
+两个服务都是无状态的，回滚与 OCR 一样只改 tag。`model-price-gbm` 的 booster 随仓库
+交付（`registry/price-gbm.yaml`），不属本节。
 
 ## 有状态服务：日志聚类的额外要求
 
@@ -86,11 +93,13 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 
 ## 暴露方式
 
-**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。三个服务都实现了
-`AUTH_TOKEN` 但未启用。代价各不同，这是当时单独写 D16 的原因：
+**当前口径是：不带鉴权就开放**（`docs/design.md` D15–D17）。各服务都实现了
+`AUTH_TOKEN` 但未启用。代价因服务而异，这是当时单独写 D16 的原因：
 
 - **OCR**：`/ocr` 是纯 CPU 消耗型接口，被滥用的表现是并发额度被占满，
   上界（`MAX_CONCURRENCY`、`QUEUE_TIMEOUT_SECS`）保证对方拿到 503 而不是主机过载；
+- **时序预测**：`/v1/forecast` 同样是 CPU 消耗型，单位成本高于 OCR（一次预测百毫秒
+  量级，长上下文 × 大步长到秒级），上界是 `MAX_CONCURRENCY` 与 `QUEUE_TIMEOUT_SECS`；
 - **日志聚类**：`/cluster` 是**写**接口——被滥用是在模板树里埋数据，
   而模板污染不会自动恢复，只能清空状态卷重学（代价是丢掉已累积的模板）；
 - **判定服务**：`/v1/systemone` 每次请求要吃 4 个核几百毫秒，被滥用同样是白烧 CPU，
@@ -104,11 +113,13 @@ release workflow 会校验 **tag 与版本唯一来源一致**，不一致直接
 
 ## 页面
 
-三个服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
+各服务都自带页面，都在**根路径** `/`，随 API 同端口暴露：
 
 - **OCR**：拍照/传图 → 文字。设计与交互见 `docs/ocr-ui.md`。
 - **日志聚类**：贴日志 → 看模板。设计与交互见 `docs/logcluster-ui.md`。
+- **时序预测**：填/粘贴历史值 → 中位数点预测与 0.1–0.9 分位区间，可多序列多分位。
 - **判定服务**：填 state 与 questions → 看答案与选项概率分布（调阈值时用）。
+- **电价预测**：填日序列与目标日 → 看 q10/q50/q90 电价区间。
 
 入口必须落在**域名根路径**（页面用绝对路径调 `/ocr`、`/cluster`，子路径式入口会
 打不开数据），并走 HTTPS（`navigator.clipboard` 只在安全上下文可用，OCR 页面的
