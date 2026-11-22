@@ -1,0 +1,135 @@
+name: Release price-lear service
+
+# 发布由 tag 触发，tag 约定为 <service>/v<semver>，例如 price-lear/v0.1.0。
+# 流程与仓库既有发布链路一致：CI 只负责产出镜像，部署由 cops 改 tag 完成。
+#
+# 与 release-forecast.yml 的差别：权重（LEAR predictor 状态 JSON，16 KB）
+# 随仓库交付，构建期不需要取权重，契约测试也不需要网络。
+on:
+  push:
+    tags:
+      - "price-lear/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 price-lear/v0.1.0），用于重跑发布"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-price-lear-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/modelman-price-lear
+
+jobs:
+  release:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本与提交
+        id: meta
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${ref#price-lear/}"
+          if ! printf '%s' "${version}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag 必须形如 price-lear/v1.2.3，实际为 ${ref}" >&2
+            exit 1
+          fi
+
+          # src/build_info.py 里的 VERSION 是版本的唯一来源，tag 必须与它一致。
+          # 不一致的话镜像里报的版本会和 tag 对不上，运维就失去了判断依据。
+          declared="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' services/price-lear/src/build_info.py)"
+          if [ "v${declared}" != "${version}" ]; then
+            echo "tag 是 ${version}，但 services/price-lear/src/build_info.py 里写的是 ${declared}" >&2
+            exit 1
+          fi
+
+          # 与另外几个服务一致：短 sha 取 7 位
+          short_sha="$(git rev-parse --short=7 "${ref}^{commit}")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${version}-${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+
+      - name: 固定 Python 版本
+        # 发布门禁要现建 venv 装 requirements：runner 上的默认 python3 已升到 3.14，
+        # 而 pydantic==2.10.4 的 pydantic-core 没有 3.14 的 wheel，源码构建会撞
+        # PyO3 的 "maximum supported version (3.13)" 直接 fail。钉 3.12 与运行镜像
+        # （python:3.12-slim）保持一致。
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 契约测试（发布门禁）
+        # 镜像一旦推送就会被 cops 引用，因此权重摘要、输出形状与分位单调性的回归
+        # 必须在推送前拦住。predictor 状态随仓库交付，这一步不需要网络。
+        run: make test SERVICE=price-lear
+
+      - name: 登录 GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送镜像
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/price-lear/Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            GIT_COMMIT=${{ steps.meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=modelman-price-lear
+            org.opencontainers.image.description=Guangdong spot day-ahead hourly price forecast (LEAR: LASSO autoregression, CPU)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试
+        # 与 CI 共用 services/price-lear/smoke.sh，让"镜像能跑"只有一处定义。
+        env:
+          IMAGE: ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+          PORT: "18084"
+        run: bash services/price-lear/smoke.sh
+
+      - name: 发布信息
+        run: |
+          set -euo pipefail
+          {
+            echo "## 现货小时电价 LEAR 服务已发布"
+            echo
+            echo "镜像：\`${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "digest：\`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "### cops 侧改动（apps/model-price-lear/.env）"
+            echo
+            echo '```diff'
+            echo "-MODEL_PRICE_LEAR_IMAGE_TAG=v0.1.0-0000000"
+            echo "+MODEL_PRICE_LEAR_IMAGE_TAG=${{ steps.meta.outputs.image_tag }}"
+            echo '```'
+            echo
+            echo "资源口径：内存 256Mi 足够（状态 JSON 毫秒级加载，推理只用 numpy）；"
+            echo "CPU 不设 request，单请求 ~50ms。调用方是 ems 后端（融合 TimesFM），"
+            echo "入口不需要公网域名，Service 内部互访即可。"
+          } >> "${GITHUB_STEP_SUMMARY}"
