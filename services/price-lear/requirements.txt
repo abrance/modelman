@@ -1,0 +1,7 @@
+# 广东现货小时电价 LEAR 服务的运行期依赖。版本全部钉死：预测数值直接受
+# 系数与框架版本影响，浮动版本会让契约基线失去意义。
+# 运行期只用 numpy 做线性推理，不依赖 sklearn（sklearn 只在训练脚本用，见 requirements-dev.txt）。
+numpy==2.2.3
+fastapi==0.115.6
+pydantic==2.10.4
+uvicorn[standard]==0.32.1

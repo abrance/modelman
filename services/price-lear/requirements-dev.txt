@@ -1,0 +1,8 @@
+# 测试、契约基线生成与训练脚本用的依赖，不进运行镜像。
+-r requirements.txt
+httpx==0.28.1
+pytest==8.3.4
+# 训练脚本 tools/train.py 用 sklearn 拟合 LassoCV 并导出 predictor 状态；
+# 运行期推理不依赖它（导出成纯 numpy 数值随镜像交付）。
+scikit-learn==1.9.1
+scipy==1.18.0
