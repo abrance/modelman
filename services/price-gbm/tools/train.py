@@ -40,25 +40,29 @@ MODEL_DIR = SERVICE_ROOT / "models" / "gbm-hour-v1"
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--horizon-days", type=int, default=5,
-                    help="训练口径的锚点距离（生产口径：官网 T+5 滞后后目标日距锚点约 5 天）")
+    ap.add_argument("--horizons", default="1,2,3,4,5,6,7,8,10,12,14",
+                    help="训练用的锚点距离集合（逗号分隔）。必须覆盖线上会遇到的整个区间："
+                         "生产口径约 5~6 天，准确度统计 as-of 重放会遇到 1~14 天。"
+                         "只用一个 horizon 训出来的模型在别的 horizon 上会明显变差。")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
     raw = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     days = {k: {"prices": v["prices"], "power": v["power"]} for k, v in raw.items()}
     all_days = sorted(date.fromisoformat(d) for d in days)
-    print(f"{len(all_days)} 个完整日（{all_days[0]} ~ {all_days[-1]}），H={args.horizon_days}")
+    horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
+    print(f"{len(all_days)} 个完整日（{all_days[0]} ~ {all_days[-1]}），horizons={horizons}")
 
     X, y = [], []
-    for x_day in all_days:
-        target = days[x_day.isoformat()]["prices"]
-        for h in range(24):
-            f = day_features(days, x_day, h, args.horizon_days)
-            if f is None:
-                break
-            X.append(f)
-            y.append(target[h])
+    for horizon in horizons:
+        for x_day in all_days:
+            target = days[x_day.isoformat()]["prices"]
+            for h in range(24):
+                f = day_features(days, x_day, h, horizon)
+                if f is None:
+                    break
+                X.append(f)
+                y.append(target[h])
     X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)
     print(f"训练样本 {X.shape}")
 
@@ -81,7 +85,7 @@ def main() -> int:
         print(f"saved {path}")
 
     manifest["revision"] = (
-        f"gd-home24h-{all_days[0]}~{all_days[-1]}-H{args.horizon_days}-seed{args.seed}"
+        f"gd-home24h-{all_days[0]}~{all_days[-1]}-H{args.horizons.replace(',', '-')}-seed{args.seed}"
     )
     (MODEL_DIR / "sha256.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
