@@ -93,6 +93,15 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v5
 
+      - name: 固定 Python 版本
+        # runner 默认 python3 已升到 3.14，而依赖里的 pydantic-core 没有 3.14 的
+        # wheel，源码构建会撞 PyO3 的 "maximum supported version (3.13)"。
+        # 钉 3.12 与运行镜像（python:3.12-slim）一致；service.mk 里
+        # PYTHON ?= python3 的服务也随之用 3.12。
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       # Rust 工具链与缓存对非 Rust 服务是空转，代价是几步几十秒；
       # 换来的是一条 job 定义覆盖所有技术栈。
       - name: 安装 Rust 工具链
