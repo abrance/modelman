@@ -3,7 +3,7 @@
 给小模型准备的一条尽量无脑的交付链路：一个服务一个镜像，CI 构建并发布，
 部署主机拉取，上线前有健康门禁。
 
-当前有五个服务，技术栈不同、交付约定相同：
+当前有六个服务，技术栈不同、交付约定相同：
 
 | 服务 | 任务 | 技术栈 | 权重 | 运行形态 |
 |---|---|---|---|---|
@@ -12,6 +12,7 @@
 | [forecast](services/forecast/README.md) | TimesFM 3.0 时序预测（点预测 + 分位） | Python + FastAPI + PyTorch | 1.32 GB，构建期按 revision + sha256 取回，**不进仓库也不进构建上下文** | 无状态 |
 | [jev](services/jev/README.md) | System One 结构化判定（choice / noul / score） | Python + FastAPI + Laya | 678 MB，构建期按 revision 取回并校验 sha256 | 无状态 |
 | [price-gbm](services/price-gbm/README.md) | 广东现货日前小时电价分位预测 | Python + FastAPI + LightGBM | 8.4 MB booster 文本随镜像交付 | 无状态 |
+| [price-lear](services/price-lear/README.md) | 广东现货日前小时电价 LEAR 预测 | Python + FastAPI + numpy | 2.4 KB predictor 状态 JSON 随镜像交付 | 无状态 |
 
 各服务共用同一套交付约定：一个服务一个镜像、契约测试门禁、同一组探活与状态端点、
 `make <目标> SERVICE=<name>` 分派。差异只在容器内部。设计依据见 `docs/design.md`。
@@ -51,6 +52,14 @@ modelman/
 │   │   └── Dockerfile
 │   ├── price-gbm/              # LightGBM 电价分位预测服务（Python，不入 cargo workspace）
 │   │   ├── models/gbm-hour-v1/ # booster 文本 + sha256 清单，随镜像交付
+│   │   ├── src/                # 服务代码；src/ui.py 是自带页面
+│   │   ├── tests/fixtures/     # 契约用例 + 基线
+│   │   ├── tools/              # 确定性重训、基线生成、冒烟断言
+│   │   ├── service.mk
+│   │   ├── smoke.sh
+│   │   └── Dockerfile
+│   ├── price-lear/             # LEAR 电价预测服务（Python，不入 cargo workspace）
+│   │   ├── models/lear-hour-v1/ # predictor 状态 JSON + sha256 清单，随镜像交付
 │   │   ├── src/                # 服务代码；src/ui.py 是自带页面
 │   │   ├── tests/fixtures/     # 契约用例 + 基线
 │   │   ├── tools/              # 确定性重训、基线生成、冒烟断言

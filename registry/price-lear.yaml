@@ -1,0 +1,57 @@
+# 广东现货小时电价 LEAR 服务的模型注册表条目。
+#
+# 与 price-gbm.yaml 同一套约定：这里是"哪个模型在跑"的唯一事实来源，
+# 改这个文件（或权重本身）意味着要出新镜像，走同一条发布链路
+# （打 tag -> CI 构建 -> 改 cops 的 image tag）。
+
+services:
+  price-lear:
+    task: spot_price_hour_forecasting
+    runtime: python-fastapi-linear
+    default_model: lear-hour-v1
+    tiers:
+      - id: lear-hour-v1
+        source: LEAR / LASSO 线性回归（Lago et al. 2021, Applied Energy 293:116983），自训练
+        # 不可变标识：训练数据快照范围 + 口径 + seed，重训即换 revision
+        revision: gd-home24h-2023-09-02~2026-11-15-H5-seed42
+        # predictor 状态是 ~2.4 KB JSON（系数+标准化参数+残差偏移），随仓库交付（D1），
+        # 文件级 sha256 在摘要清单里。运行期只用 numpy 推理，不依赖 sklearn。
+        files:
+          - state.json
+        bytes: 2374
+        digest_manifest: services/price-lear/models/lear-hour-v1/sha256.json
+        training_data: services/price-lear/training-data/gd-home24h.json
+        training_note: >-
+          官网主页 24 点分时的完整日快照（公开市场数据），tools/train.py 确定性重训
+          （SimpleImputer(median) + StandardScaler + LassoCV(TimeSeriesSplit(3))，
+          numpy/sklearn 线程数钉死）。口径 H=5：目标日距锚点 5 天，对应官网 T+5
+          滞后的生产口径。导出成纯数值 predictor 状态，线上点积推理。
+        license:
+          code: Apache-2.0
+          weights: self-trained
+          data_note: >-
+            训练数据来自广东电力交易中心官网公开发布的日前分时价与电量，
+            可公开分发。
+        runtime_cost:
+          # 本机实测：state.json 毫秒级加载，单请求特征+推理 ~3.8ms（40 天输入，
+          # 契约基线 sum_latency）。numpy 常驻内存 <100MB。
+          load_peak_rss_mb: 100
+          predict_ms_40d: 4
+        accuracy:
+          # 90 天 as-of 重放（2026-08-18~11-15，ems 仓库 benchmark.py，H=8 生产口径）
+          horizon8_mape_pct: 18.66
+          note: >-
+            同窗口 H=8 对照：TimesFM 3.0 是 20.30%、GBM 20.58% —— LEAR 在长锚点
+            生产口径下反超两者（H=1 数据齐口径下 TimesFM 11.37% 略优于 LEAR
+            12.25%）。多模型融合由调用方（ems 后端）完成，本服务只出 LEAR。
+        limits:
+          - 节假日表只覆盖 2024-2026，表外目标日节假日特征恒为 0
+          - 分位带非模型原生：q10/q90 是训练残差的经验分位固定偏移，统计含义弱于原生分位带
+    contract:
+      fixtures: services/price-lear/tests/fixtures
+      baseline: services/price-lear/tests/fixtures/baseline.json
+      tolerance: 0.001
+      shape_checked: true
+      monotonic_quantiles: true
+      digest_checked: true
+      latency_budget_ms: 2000

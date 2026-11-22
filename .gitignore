@@ -17,3 +17,6 @@ services/*/models/
 # 例外：price-gbm 的 booster 是几 MB 文本，随仓库交付（D1）
 !services/price-gbm/models/
 !services/price-gbm/models/**
+# 例外：price-lear 的 predictor 状态是 ~2.4 KB JSON，随仓库交付（D1）
+!services/price-lear/models/
+!services/price-lear/models/**
